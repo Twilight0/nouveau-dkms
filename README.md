@@ -122,6 +122,8 @@ On the **Dell XPS L702X** (`GF106M`, `10de:0dcd`), the `0f` pstate was undervolt
 - `tools/sniff-memory-reclock.py`: Direct hardware BAR0 memory controller (PFB) and PLL timing sniffer.
 - `tools/run-mmiotrace.sh`: Automated kernel MMIO tracing and `demmt` decoder script.
 - `RECLOCKING_NOTES.md`: Comprehensive DDR3 memory reclocking, display architecture, and reverse engineering notes.
+- `NVENC.md`: Hardware video encoding analysis, silicon limitations, and OpenCL-accelerated encoding guide.
+- `AI.md`: Local AI / LLM inference manual, Small Language Models (SLMs), and OpenCL compute guide.
 - `CONTRIBUTING.md`: Guide for running diagnostics and submitting hardware telemetry.
 - `TODO.md`: Project roadmap and planned driver enhancements.
 
