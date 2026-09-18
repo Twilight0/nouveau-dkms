@@ -13,5 +13,6 @@ testing/nvidia_reclock_full.raw
 
 # Local diagnostic reports and scratch
 scratch/
+tmp/
 nouveau_fermi_diag_report.md
 fermi_memory_reclock_report.md

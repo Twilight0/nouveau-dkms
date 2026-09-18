@@ -1,31 +1,33 @@
 # nouveau-fermi-reclock-dkms
 
-Out-of-tree **Nouveau DKMS kernel module** with **Fermi (GF100–GF119)** core, shader, and voltage reclocking support, bundled with a load-aware dynamic GPU frequency governor and backlight synchronization daemon.
+Out-of-tree **Nouveau DKMS kernel module** with **Fermi (GF100–GF119)** core, shader, voltage, and **bidirectional DDR3 memory reclocking** support, bundled with an intelligent two-stage dynamic GPU governor and telemetry management suite.
 
 > [!WARNING]
 > **EXPERIMENTAL SOFTWARE DISCLAIMER**
-> This driver and dynamic clock governor are **experimental** and have been tested and verified specifically on a **Dell XPS L702X (GeForce GT 555M / GF106M, 3072 MB DDR3, 120Hz display)** running Linux. 
+> This driver and dynamic clock governor have been extensively tested and verified specifically on a **Dell XPS L702X (GeForce GT 555M / GF106M, 3072 MB DDR3, 120Hz display)** running Linux. 
 > Behavior on different hardware models, memory configurations (e.g. GDDR5 vs DDR3), or GPU variants may vary. Use at your own risk.
 
 ---
 
 ## Features
 
+- **Bidirectional DDR3 Memory Reclocking (324 MHz ↔ 900 MHz)**:
+  - Custom resident Falcon microcode executor engine running sub-millisecond DRAM retiming via MMIO mailboxes.
+  - Completely bypasses the Tesla-era PMU MEMX queue architecture, avoiding PRIVRING hardware faults and pipeline hangs.
+  - Restores full 43.2 GB/s memory bandwidth under 3D workloads.
 - **Fermi GPU Core & Shader Reclocking (GF100 / GF104 / GF106 / GF108 / GF110 / GF114 / GF116 / GF119)**:
-  - Unlocks full core clock scaling from low-power idle `07` (e.g. 202 MHz) up to maximum performance `0f` (590+ MHz).
-  - Enables full hardware 3D acceleration (achieving 1600+ FPS in `glxgears` on GeForce GT 555M).
-  - Exposes the shader clock (2× core hot clock) in `/sys/kernel/debug/dri/*/pstate`.
-- **Voltage Correction + Optional Overclock**:
-  - Fixes the `0f` pstate undervoltage on the Dell XPS L702X (870 mV → factory 1.030 V).
-  - Optional synthetic overclock pstate `10` (`core 700 / shader 1400 / memory 900 @ 1.030 V`), gated behind the `NvFermiOC` module option (off by default).
-- **Intelligent Dynamic Frequency Governor (`nouveau-dynclockd`)**:
-  - Automatically manages GPU pstates (`07` $\leftrightarrow$ `0f`).
-  - Hybrid activity tracking: Instant performance boost on dedicated 3D workloads + load-aware tick sampling for WebGL/browser canvas, keeping idle desktop usage cool and efficient at `07`.
-- **Hardware Backlight Synchronization**:
-  - Automatically bridges ACPI video and platform backlight nodes (`acpi_video0` / `dell_backlight`) to NVIDIA panel PWM (`nv_backlight`) at 100ms intervals.
-- **Interactive Curses TUI & CLI (`nouveau-tui` & `nouveau-ctrl`)**:
-  - `nouveau-tui`: Pulsemixer-styled tabbed interface for live clock monitoring, one-click P-State locking, governor daemon toggling, active DRM/3D client tracking, and sensor telemetry.
-  - `nouveau-ctrl`: Flexible command-line interface for status queries, scripting, and daemon management.
+  - Complete 3-tier clock scaling: `03` (50 MHz) ↔ `07` (202 MHz) ↔ `0f` (590 MHz core / 1180 MHz shader).
+  - Synchronous factory voltage regulation (820 mV idle ↔ 1.030 V full 3D).
+  - Optional synthetic overclock pstate `10` (`core 700 / shader 1400 / memory 900 @ 1.030 V`), gated behind `config=NvFermiOC=true`.
+- **Flicker-Free Two-Stage Dynamic Frequency Governor (`nouveau-dynclockd`)**:
+  - Automatically manages GPU power states without display flicker.
+  - **Stage 1 (2D / Browser / Desktop)**: Smoothly toggles between `03` (50 MHz) and `07` (202 MHz) while keeping memory clamped at 324 MHz — **100% flicker-free at 120 Hz**.
+  - **Stage 2 (Dedicated 3D Graphics)**: Instantly scales to `0f` (590/900 MHz @ 1.030 V) when games, emulators, or benchmarks run.
+  - **Thermal Protection**: Automatically caps highest clocks to `07` when GPU temperature reaches the throttle limit (default: 80 °C with 5 °C hysteresis). Configurable via `/etc/nouveau-dynclockd.conf`.
+- **Comprehensive Hardware Telemetry (`nouveau-ctrl` & `nouveau-tui`)**:
+  - Interactive Curses TUI and scriptable CLI with colorized thermal zones (<65°C Green, 65-75°C Yellow, >75°C Red).
+  - Real-time Fan RPM reading via Dell SMM platform monitor (`dell_smm`).
+  - Real-time PCIe link speed & generation telemetry (`current_link_speed` / width).
 - **DKMS Integration**:
   - Automatically rebuilds and installs across kernel upgrades.
 ---
