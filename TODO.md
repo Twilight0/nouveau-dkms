@@ -19,6 +19,10 @@ This document tracks completed milestones, planned features, architectural impro
   - Developed custom resident Falcon microcode executor running directly on GPU PMU (`0x10a000` / `0x10a1c0`).
   - Achieved rock-solid bidirectional memory transitions between `324 MHz` (648 MT/s) and `900 MHz` (1800 MT/s) with locked DLL phase and strobe timings.
   - Packaged for DKMS and pre-built distribution in AliveOS repository.
+- [x] **v2.0.1 S3 Suspend/Resume Self-Healing Recovery**:
+  - Resolved GPU clock freeze at P-State `07` (202 MHz core / 324 MHz mem) after exiting S3 system sleep.
+  - Implemented hardware handshake signature check (`SCRATCH0 == 0xE1EC0001`) to detect cleared PMU IMEM on resume and fall back to cold path without timeout.
+  - Added subdev state reset in `gf100_ram_init()` and automatic timeout recovery.
 - [x] **Dynamic PCIe Link Speed Scaling (Gen1 2.5 GT/s $\leftrightarrow$ Gen2 5.0 GT/s) Verified**:
   - Confirmed active on hardware: PCIe link operates at `2.5 GT/s x16` (Gen1) in P12/P8 (`03`/`07`), and dynamically retrains to `5.0 GT/s x16` (Gen2) upon entering P0 (`0f`) or OC (`10`).
   - Delivers full 8.0 GB/s per direction (16.0 GB/s aggregate) DMA throughput without Sandy Bridge root complex timeouts.

@@ -4,6 +4,24 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.0.1] - 2026-09-19
+
+### 🐛 Bug Fix: S3 Suspend / Resume Resident Executor Self-Healing
+
+This release resolves a critical GPU clock freeze occurring after resuming from system suspend (S3 sleep), where the GPU clock remained locked at P-State `07` (202 MHz core / 324 MHz memory) and refused to scale to higher performance states.
+
+#### 🧠 Kernel Module (`ramgf100.c`)
+- **Zero-Overhead S3 Resume Handshake Signature Detection**:
+  - Across system suspend/resume or Falcon hardware resets, PMU IMEM is cleared and `SCRATCH0` (`0x10a080`) drops to `0x00000000`.
+  - The driver now verifies the resident microcode handshake signature (`0xE1EC0001`) before submitting fast-path mailbox commands.
+  - If the signature is absent, the driver instantly detects the lost resident state, clears `fexec_resident_running = false`, and falls back to the cold initialization path without waiting for the 2-second fast-path timeout.
+- **Subdevice Resume Hook Reset**:
+  - Automatically resets `fexec_resident_running = false` inside `gf100_ram_init()`, ensuring every subdevice re-initialization cleanly refreshes driver state.
+- **Fast-Path Timeout Auto-Recovery**:
+  - On any fast-path timeout or mailbox communication failure, `fexec_resident_running` is automatically reset to `false`, allowing subsequent state changes to self-heal and re-initialize via the cold path.
+
+---
+
 ## [2.0.0] - 2026-09-18
 
 ### 🚀 Major Milestone: Full Bidirectional DDR3 Memory Reclocking & Telemetry Suite

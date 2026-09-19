@@ -6,6 +6,21 @@ This document maintains a strict versioned record of driver patches, their archi
 
 ## 1. Patch Catalog
 
+### `patches/patch-v2.0.1-resume-fix.patch`
+- **Release/Tag**: `v2.0.1`
+- **GPU Architecture**: NVIDIA GF106M (GeForce GT 555M)
+- **Features Included**:
+  - All features of `v2.0.0-ddr3-reclock`.
+  - **S3 Suspend / Resume Self-Healing Recovery**:
+    - Handshake signature check (`SCRATCH0 == 0xE1EC0001`) detects when Falcon IMEM was cleared during sleep/reset.
+    - Instant zero-wait fallback to cold path re-uploads resident executor microcode.
+    - Subdev `gf100_ram_init()` resets `fexec_resident_running = false` on hardware resume.
+    - Fast-path timeout auto-clears running state to guarantee self-healing.
+- **Stability**: **100% Production Stable**. Resolves the post-resume P-State 07 clock freeze.
+- **When to Use**: Primary release patch for `nouveau-fermi-reclock-dkms` v2.0.1+.
+
+---
+
 ### `patches/patch-v2.0.0-ddr3-reclock.patch`
 - **Release/Tag**: `v2.0.0`
 - **GPU Architecture**: NVIDIA GF106M (GeForce GT 555M)
@@ -175,7 +190,8 @@ echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0
 
 | Target State | Patch File | Core/Shader Reclock | Memory 900 MHz | Rollback Risk |
 |---|---|---|---|---|
-| **v2.0.0 Production** | `patch-v2.0.0-ddr3-reclock.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | **Current Stable Release** |
+| **v2.0.1 Production** | `patch-v2.0.1-resume-fix.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | **Current Stable Release (S3 Fix)** |
+| **v2.0.0 Production** | `patch-v2.0.0-ddr3-reclock.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | Stable (S3 freeze on resume) |
 | **PMU Clock Freeze** | `patch-v1.2.4-pmu-clock-freeze.patch` | Yes (590/1180) | Yes (324 <-> 900 MHz) | Glitch-free PDAEMON pipeline |
 | **Bulletproof Resident** | `patch-v1.2.3-resident-bulletproof.patch` | Yes (590/1180) | Yes (324 <-> 900 MHz) | Timer masking + PRIVRING protection |
 | **Bidirectional Latch** | `patch-v1.2.2-bidirectional-latch.patch` | Yes (590/1180) | Yes (324 <-> 900 MHz) | Verified bidirectional PHY commit |
