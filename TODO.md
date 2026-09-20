@@ -91,6 +91,35 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
   - Automatically configure high-refresh panel constraints (120Hz / 144Hz eDP), minimum display hub clocks (`nv_clk_src_dom6`), and chipset-specific memory timings.
   - Ingest community diagnostic dumps submitted via `tools/nouveau-fermi-diag.py`.
 
+### 4. Synthetic Intermediate Performance State (P3 / State `0a`)
+- [ ] **Synthetic P3 State Implementation (`405 MHz` Core / `810 MHz` Shader / `648 MHz` DDR3 @ `0.920 V`)**:
+  - **Assigned P-State**: **`0a`** (PowerMizer **P3** — Balanced 3D / Multimedia / Video Playback).
+    - Positioned naturally in hex and performance order: `03` (P12) $\to$ `07` (P8) $\to$ **`0a` (P3)** $\to$ `0f` (P0) $\to$ `10` (OC).
+  - **Hardware Profile & Operating Specifications**:
+    - **Core Frequency**: `405 MHz` (exact midpoint between 202 MHz 2D and 590 MHz 3D).
+    - **Shader Hot Clock**: `810 MHz` (strict 2× Fermi core multiplier).
+    - **Memory Clock**: `648 MHz` (1296 MT/s DDR3, yielding ~31.1 GB/s bandwidth on 192-bit bus).
+    - **Voltage Rail**: `0.920 V` (activates the unmapped silicon hardware VID step `0x03` on the GPU voltage regulator).
+    - **PCIe Link Speed**: Gen1 `2.5 GT/s x16` or Gen2 `5.0 GT/s x16`.
+    - **Estimated Power Consumption**: ~18–22 W (bridging the gap between ~8.5 W 2D desktop and ~38 W full 3D).
+  - **Required Engineering Tasks**:
+    1. **DDR3 Timing & Phase Calibration for 648 MHz**:
+       - VBIOS only defines timing/impedance registers for `324 MHz` and `900 MHz`.
+       - Implement dynamic timing calculation/interpolation (CAS latency, tRCD, tRP, tRAS, tRFC) or test bootstrapping 648 MHz using relaxed 900 MHz CAS timings.
+    2. **Falcon Microcode Executor Support**:
+       - Expand resident Falcon executor command protocol (`cmd=3` / 648000 kHz target) in [`ramgf100.c`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-source/nvkm/subdev/fb/ramgf100.c) and `gf100.fuc3`.
+    3. **Kernel P-State Injection (`nvkm_pstate_new()`)**:
+       - Inject synthetic P-State `0a` into `clk->states` list between `07` and `0f`, gated via module parameter `config=NvFermiP3=true`.
+       - Map voltage rail to VID `0x03` (`0.920 V`).
+    4. **Governor Integration (`nouveau-dynclockd`)**:
+       - Extend dynamic frequency governor to support a 3-tier scaling ladder:
+         - Tier 1 (Light 2D / idle): P8 (`07`)
+         - Tier 2 (Video playback / UI compositing / moderate WebGL): P3 (`0a`)
+         - Tier 3 (Heavy 3D rendering / games): P0 (`0f`) or OC (`10`)
+       - Add anti-hysteresis deadbands to prevent governor ping-pong between `07` and `0a`.
+    5. **Userland Telemetry (`nouveau-ctrl` & `nouveau-tui`)**:
+       - Register `"0a": "P3  Balanced 3D / Multimedia"` in `PSTATE_LABELS`.
+
 ---
 
 ## ⚡ Falcon Microcode & Memory Controller Expansion
