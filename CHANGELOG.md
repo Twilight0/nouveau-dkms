@@ -4,6 +4,24 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.1.0] - 2026-10-04
+
+### 🔧 Kernel 6.18.55 Rebase & Compatibility
+- **DRM client API compat (`nouveau_display.c`)**: version-guarded `drm_client_dev_suspend/resume` calls (1-arg on `>=6.18.55`, 2-arg before), tracking upstream `7910d69376`. Builds clean on both `6.18.52` and `6.18.55` headers.
+- **Audited 6.18.53–55 nouveau changes**: only the client API breaks the build; remaining stable backports are logic fixes, not ported in this minimal rebase.
+
+### 📊 Live VRAM Telemetry (exact, not estimated)
+- **In-kernel accounting (`nouveau_debugfs.c`)**: new `VRAM: <used> MiB / <total> MiB used` line on the `pstate` node from the TTM VRAM manager (`ttm_resource_manager_usage`) and `ram_user`. Replaces the `gpuva` estimate, which stays empty on pre-UVMM Fermi.
+- **Unprivileged access without udev**: the governor (root) publishes `/run/nouveau-fermi-reclock/vram` (`0644`, 15 s freshness guard); `nouveau-ctrl status` and `nouveau-tui` prefer it, fall back to direct debugfs (root). Live-verified as user.
+
+### 🔋 Governor Battery Awareness
+- New `BATTERY_CAP=true` option (`/etc/nouveau-dynclockd.conf`): caps max state to `07` (P8) on DC power, matching proprietary `390.157`; full `0f` on AC. Power source shown in `status`/`tui`. Code-complete, field verification pending.
+
+### ✨ VBlank-Aligned Memory Reclock (first iteration)
+- New `gf100_ram_wait_vblank()` in `ramgf100.c`: starts the ~5 ms Falcon retraining at blanking onset (NV50 `rgpos 0x616340`, `NvFermiVblankSync=1` default, fail-open 50 ms timeout) so the pause lands on blanking + top lines instead of mid-frame. Full zero-pause remains a TODO. Field verification pending.
+
+---
+
 ## [2.0.1] - 2026-09-19
 
 ### 🐛 Bug Fix: S3 Suspend / Resume Resident Executor Self-Healing

@@ -18,6 +18,14 @@ import time
 
 CONFIG_PATH = "/etc/nouveau-dynclockd.conf"
 
+POWER_SUPPLY_BASE = "/sys/class/power_supply"
+SNAPSHOT_DIR = "/run/nouveau-fermi-reclock"
+VRAM_SNAPSHOT = os.path.join(SNAPSHOT_DIR, "vram")
+GPUVA_CANDIDATES = [
+    "/sys/kernel/debug/dri/0/gpuva",
+    "/sys/kernel/debug/dri/0000:01:00.0/gpuva",
+]
+
 PSTATE_CANDIDATES = [
     "/sys/kernel/debug/dri/0/pstate",
     "/sys/kernel/debug/dri/0000:01:00.0/pstate",
@@ -50,6 +58,7 @@ DEFAULT_CONFIG = {
     "POLL_INTERVAL": 1.0,
     "LOAD_TICK_THRESHOLD": 40,
     "IDLE_STATE": "03",
+    "BATTERY_CAP": True,
 }
 
 config = dict(DEFAULT_CONFIG)
@@ -88,6 +97,8 @@ def load_config():
                         elif k == "IDLE_STATE":
                             if v in ("03", "07", "08"):
                                 new_cfg[k] = v
+                        elif k == "BATTERY_CAP":
+                            new_cfg[k] = v.lower() not in ("0", "false", "no", "off")
         except Exception as e:
             print(f"Warning: Could not read {CONFIG_PATH}: {e}", file=sys.stderr)
     config = new_cfg
@@ -109,7 +120,7 @@ def check_config_reload():
 
 def handle_sighup(signum, frame):
     load_config()
-    print(f"[*] SIGHUP received: Configuration reloaded: THROTTLE_TEMP={config['THROTTLE_TEMP']}°C, IDLE_STATE={config['IDLE_STATE']}")
+    print(f"[*] SIGHUP received: Configuration reloaded: THROTTLE_TEMP={config['THROTTLE_TEMP']}°C, IDLE_STATE={config['IDLE_STATE']}, BATTERY_CAP={config['BATTERY_CAP']}")
     sys.stdout.flush()
 
 
@@ -159,6 +170,52 @@ def get_gpu_temp():
         except Exception:
             pass
     return None
+
+
+def get_power_source():
+    """Returns 'AC', 'BAT', or 'UNKNOWN' from /sys/class/power_supply/.
+
+    Any Mains/ADP/AC node with online==1 means AC; online==0 means battery.
+    With no AC node, falls back to BAT status (Discharging=BAT).
+    No battery node at all (e.g. removed pack) is treated as AC.
+    """
+    try:
+        if not os.path.isdir(POWER_SUPPLY_BASE):
+            return "UNKNOWN"
+        ac_online = None
+        bat_status = None
+        for name in os.listdir(POWER_SUPPLY_BASE):
+            node = os.path.join(POWER_SUPPLY_BASE, name)
+            ptype = ""
+            try:
+                with open(os.path.join(node, "type"), "r") as f:
+                    ptype = f.read().strip()
+            except Exception:
+                pass
+            upper = name.upper()
+            if upper.startswith(("ADP", "AC")) or ptype == "Mains":
+                try:
+                    with open(os.path.join(node, "online"), "r") as f:
+                        ac_online = (f.read().strip() == "1")
+                except Exception:
+                    pass
+            if upper.startswith("BAT") or ptype == "Battery":
+                try:
+                    with open(os.path.join(node, "status"), "r") as f:
+                        bat_status = f.read().strip()
+                except Exception:
+                    pass
+        if ac_online is True:
+            return "AC"
+        if ac_online is False:
+            return "BAT"
+        if bat_status == "Discharging":
+            return "BAT"
+        if bat_status in ("Charging", "Full", "Not charging"):
+            return "AC"
+        return "AC" if bat_status is None else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
 
 
 def get_monitored_app_ticks():
@@ -249,6 +306,77 @@ def set_pstate(target_state):
         return False
 
 
+def read_gpuva_mapped_mib():
+    """Sums mapped GPU-VA ranges from debugfs (root-only). Returns MiB or None."""
+    import re as _re
+    for node in GPUVA_CANDIDATES:
+        try:
+            with open(node, "r") as f:
+                raw = f.read()
+        except Exception:
+            continue
+        total_bytes = 0
+        for line in raw.splitlines():
+            if "|" not in line or "start" in line.lower():
+                continue
+            parts = [p.strip() for p in line.split("|")]
+            hexes = [p for p in parts if _re.fullmatch(r"0x[0-9a-fA-F]+", p)]
+            if len(hexes) >= 2:
+                try:
+                    total_bytes += int(hexes[1], 16)
+                except ValueError:
+                    continue
+        if total_bytes > 0:
+            return total_bytes / (1024.0 * 1024.0)
+    return None
+
+
+def read_pstate_vram():
+    """Parses the kernel VRAM: line from pstate (exact TTM accounting)."""
+    import re as _re
+    if not active_pstate_path:
+        return None, None
+    try:
+        with open(active_pstate_path, "r") as f:
+            for line in f:
+                m = _re.match(r"VRAM:\s*(\d+)\s*MiB\s*/\s*(\d+)\s*MiB", line.strip())
+                if m:
+                    return float(m.group(1)), int(m.group(2))
+    except Exception:
+        pass
+    return None, None
+
+
+def publish_vram_snapshot():
+    """Writes world-readable VRAM snapshot for unprivileged ctrl/TUI."""
+    try:
+        os.makedirs(SNAPSHOT_DIR, mode=0o755, exist_ok=True)
+        try:
+            os.chmod(SNAPSHOT_DIR, 0o755)
+        except Exception:
+            pass
+        used, total, source = None, None, None
+        pused, ptotal = read_pstate_vram()
+        if pused is not None:
+            used, total, source = pused, ptotal, "pstate"
+        else:
+            gu = read_gpuva_mapped_mib()
+            if gu is not None:
+                used, source = gu, "gpuva"
+        if used is None:
+            return
+        tmp = VRAM_SNAPSHOT + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(f"used_mib={used:.1f}\n")
+            if total is not None:
+                f.write(f"total_mib={total}\n")
+            f.write(f"source={source}\nupdated={int(time.time())}\n")
+        os.chmod(tmp, 0o644)
+        os.replace(tmp, VRAM_SNAPSHOT)
+    except Exception:
+        pass
+
+
 def handle_signal(signum, frame):
     print(f"Received signal {signum}. Reverting to safe clock state 07 before exit...")
     sys.stdout.flush()
@@ -263,11 +391,13 @@ def main():
     signal.signal(signal.SIGHUP, handle_sighup)
 
     load_config()
+    battery_throttled = False
 
     print("================================================================================")
     print(" 🚀 Nouveau Dynamic Frequency & P-State Governor")
     print(f" • Idle P-State:       {config['IDLE_STATE']}")
     print(f" • Thermal Cap Limit: {config['THROTTLE_TEMP']} °C (Hysteresis: {config['THROTTLE_HYST']} °C)")
+    print(f" • Battery Cap:       {'07 (P8) on DC' if config['BATTERY_CAP'] else 'disabled'} (Power: {get_power_source()})")
     print(f" • Poll Interval:     {config['POLL_INTERVAL']} s")
     print("================================================================================")
     sys.stdout.flush()
@@ -288,6 +418,9 @@ def main():
         # Check for config file changes
         check_config_reload()
 
+        # Publish privileged VRAM usage for unprivileged ctrl/TUI
+        publish_vram_snapshot()
+
         # 1. Thermal protection check
         gpu_temp = get_gpu_temp()
         if gpu_temp is not None:
@@ -300,7 +433,20 @@ def main():
                 print(f"[✓] Thermal threshold cleared: GPU temp {gpu_temp:.1f}°C <= {config['THROTTLE_TEMP'] - config['THROTTLE_HYST']}°C. Restoring full 0f capability.")
                 sys.stdout.flush()
 
-        # 2. Check for dedicated 3D apps (games, emulators, benchmarks)
+        # 2. Power-source check (AC vs battery, matches proprietary 390.157:
+        #    cap to P8/07 on DC, allow P0/0f on AC)
+        power = get_power_source()
+        on_battery = config["BATTERY_CAP"] and power == "BAT"
+        if on_battery and not battery_throttled:
+            battery_throttled = True
+            print("[!] On battery power (DC): capping max clock to state 07.")
+            sys.stdout.flush()
+        elif not on_battery and battery_throttled:
+            battery_throttled = False
+            print("[✓] AC power restored: full 0f capability unlocked.")
+            sys.stdout.flush()
+
+        # 3. Check for dedicated 3D apps (games, emulators, benchmarks)
         dedicated_3d = has_dedicated_3d_apps()
 
         # 3. Check for active WebGL / 3D Canvas / video load in browsers or compositors
@@ -311,10 +457,11 @@ def main():
         browser_active = (tick_delta > config["LOAD_TICK_THRESHOLD"])
 
         # Determine target state: Two-stage load-aware scaling
+        capped = thermal_throttled or battery_throttled
         if dedicated_3d:
             idle_cycles = 0
-            # Dedicated 3D games/benchmarks: scale to 0f (or cap to 07 if throttled)
-            target_state = "07" if thermal_throttled else "0f"
+            # Dedicated 3D games/benchmarks: scale to 0f (or cap to 07 if throttled/on battery)
+            target_state = "07" if capped else "0f"
         elif browser_active:
             idle_cycles = 0
             # Desktop/browser/video load: scale to 07 (zero memory reclock flash!)

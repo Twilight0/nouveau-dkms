@@ -78,6 +78,8 @@ def get_pstates():
         line = line.strip()
         if not line or line.startswith("AC:") or line.startswith("DC:"):
             continue
+        if line.startswith("VRAM:"):
+            continue
         parts = line.split(":")
         if len(parts) >= 2:
             code = parts[0].strip()
@@ -175,6 +177,16 @@ def get_telemetry():
 
     daemon_active = "active" in run_cmd("systemctl is-active nouveau-dynclockd 2>/dev/null")
 
+    power = get_power_source()
+    vram = get_vram_data()
+    if vram["total_mib"] and vram["used_mib"] is not None:
+        vram_str = f"{vram['used_mib']:.0f} / {vram['total_mib']:.0f} MiB ({100.0 * vram['used_mib'] / vram['total_mib']:.0f}%)"
+    elif vram["total_mib"]:
+        vram_str = f"? / {vram['total_mib']:.0f} MiB"
+    else:
+        vram_str = "N/A"
+    power_str = {"AC": "AC (unlimited)", "BAT": "Battery DC (cap 07)"}.get(power, "Unknown")
+
     return {
         "temp": temp_str,
         "temp_val": temp_val,
@@ -183,6 +195,8 @@ def get_telemetry():
         "pcie": pcie_str,
         "throttle_temp": throttle_temp,
         "daemon": daemon_active,
+        "power": power_str,
+        "vram": vram_str,
     }
 
 def get_clients():
@@ -198,6 +212,112 @@ def get_clients():
                 if cmd_name not in ("systemd-logind", "<unset>"):
                     clients.append({"cmd": cmd_name, "pid": pid})
     return clients
+
+def get_power_source():
+    try:
+        base = "/sys/class/power_supply"
+        if not os.path.isdir(base):
+            return "UNKNOWN"
+        ac_online = None
+        bat_status = None
+        for name in os.listdir(base):
+            node = os.path.join(base, name)
+            try:
+                with open(os.path.join(node, "type"), "r") as f:
+                    ptype = f.read().strip()
+            except Exception:
+                ptype = ""
+            upper = name.upper()
+            if upper.startswith(("ADP", "AC")) or ptype == "Mains":
+                try:
+                    with open(os.path.join(node, "online"), "r") as f:
+                        ac_online = (f.read().strip() == "1")
+                except Exception:
+                    pass
+            if upper.startswith("BAT") or ptype == "Battery":
+                try:
+                    with open(os.path.join(node, "status"), "r") as f:
+                        bat_status = f.read().strip()
+                except Exception:
+                    pass
+        if ac_online is True:
+            return "AC"
+        if ac_online is False:
+            return "BAT"
+        if bat_status == "Discharging":
+            return "BAT"
+        if bat_status in ("Charging", "Full", "Not charging"):
+            return "AC"
+        return "AC" if bat_status is None else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+def get_vram_data():
+    total_mib = None
+    try:
+        for cmd in ("journalctl -k -b 0 2>/dev/null", "dmesg 2>/dev/null"):
+            out = run_cmd(cmd, timeout=5)
+            m = re.search(r"drm:\s*VRAM:\s*(\d+)\s*MiB", out or "")
+            if m:
+                total_mib = int(m.group(1))
+                break
+    except Exception:
+        pass
+    used_mib = None
+    source = None
+    try:
+        snap = "/run/nouveau-fermi-reclock/vram"
+        if os.path.exists(snap) and (time.time() - os.path.getmtime(snap)) < 15:
+            vals = {}
+            with open(snap, "r") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        vals[k.strip()] = v.strip()
+            if "used_mib" in vals:
+                used_mib = float(vals["used_mib"])
+                source = "daemon"
+            if "total_mib" in vals:
+                try:
+                    total_mib = int(float(vals["total_mib"]))
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+    try:
+        raw = read_debugfs_file(PSTATE_PATH)
+        if raw:
+            m = re.search(r"VRAM:\s*(\d+)\s*MiB\s*/\s*(\d+)\s*MiB", raw)
+            if m:
+                used_mib = float(m.group(1))
+                total_mib = int(m.group(2))
+                source = "pstate"
+    except Exception:
+        pass
+    try:
+        for node in ("/sys/kernel/debug/dri/0/gpuva",
+                      "/sys/kernel/debug/dri/0000:01:00.0/gpuva"):
+            raw = read_debugfs_file(node)
+            if not raw:
+                continue
+            total_bytes = 0
+            for line in raw.splitlines():
+                if "|" not in line or "start" in line.lower():
+                    continue
+                parts = [p.strip() for p in line.split("|")]
+                hexes = [p for p in parts if re.fullmatch(r"0x[0-9a-fA-F]+", p)]
+                if len(hexes) >= 2:
+                    try:
+                        total_bytes += int(hexes[1], 16)
+                    except ValueError:
+                        continue
+            if total_bytes > 0:
+                used_mib = total_bytes / (1024.0 * 1024.0)
+                source = "gpuva"
+                break
+    except Exception:
+        pass
+    return {"total_mib": total_mib, "used_mib": used_mib, "source": source}
 
 class Style:
     bar_top_left       = '┌'
@@ -516,6 +636,8 @@ class NouveauTUI:
                 ("Core Voltage", self.telemetry.get("volt", "N/A")),
                 ("Fan Speed", self.telemetry.get("fan", "N/A")),
                 ("PCIe Link Status", self.telemetry.get("pcie", "N/A")),
+                ("VRAM Usage", self.telemetry.get("vram", "N/A")),
+                ("Power Source", self.telemetry.get("power", "N/A")),
                 ("Dynamic Daemon", "Active / Running (Auto)" if self.telemetry.get("daemon") else "Inactive / Locked (Manual)"),
                 ("Kernel Interface", PSTATE_PATH),
             ]

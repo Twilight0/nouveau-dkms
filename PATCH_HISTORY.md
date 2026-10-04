@@ -6,6 +6,20 @@ This document maintains a strict versioned record of driver patches, their archi
 
 ## 1. Patch Catalog
 
+### `patches/patch-v2.1.0-6.18.55-vram-vblank.patch`
+- **Release/Tag**: `v2.1.0`
+- **GPU Architecture**: NVIDIA GF106M (GeForce GT 555M)
+- **Features Included**:
+  - All features of `v2.0.1-resume-fix`.
+  - **Kernel 6.18.55 DRM client API compat** (`nouveau_display.c`, version-guarded).
+  - **In-kernel VRAM telemetry** (`nouveau_debugfs.c` `VRAM:` line) + governor `/run` snapshot for unprivileged readers.
+  - **Governor battery cap** (`BATTERY_CAP`, AC/DC awareness) + power source in `ctrl`/`tui`.
+  - **VBlank-aligned memory reclock** (`gf100_ram_wait_vblank`, `NvFermiVblankSync`).
+- **Stability**: **Build-verified** on `6.18.52` headers; VRAM readout live-verified (root + user). Battery cap and VBlank alignment pending live-fire verification.
+- **When to Use**: Current release patch for `nouveau-fermi-reclock-dkms` v2.1.0+.
+
+---
+
 ### `patches/patch-v2.0.1-resume-fix.patch`
 - **Release/Tag**: `v2.0.1`
 - **GPU Architecture**: NVIDIA GF106M (GeForce GT 555M)
@@ -190,7 +204,8 @@ echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0
 
 | Target State | Patch File | Core/Shader Reclock | Memory 900 MHz | Rollback Risk |
 |---|---|---|---|---|
-| **v2.0.1 Production** | `patch-v2.0.1-resume-fix.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | **Current Stable Release (S3 Fix)** |
+| **v2.1.0 Production** | `patch-v2.1.0-6.18.55-vram-vblank.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | **Current Stable Release (6.18.55 / VRAM)** |
+| **v2.0.1 Production** | `patch-v2.0.1-resume-fix.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | Stable (S3 Fix) |
 | **v2.0.0 Production** | `patch-v2.0.0-ddr3-reclock.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | Stable (S3 freeze on resume) |
 | **PMU Clock Freeze** | `patch-v1.2.4-pmu-clock-freeze.patch` | Yes (590/1180) | Yes (324 <-> 900 MHz) | Glitch-free PDAEMON pipeline |
 | **Bulletproof Resident** | `patch-v1.2.3-resident-bulletproof.patch` | Yes (590/1180) | Yes (324 <-> 900 MHz) | Timer masking + PRIVRING protection |

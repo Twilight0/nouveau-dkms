@@ -1757,3 +1757,137 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  
  	/* call MEMX process to execute the script, and wait for reply */
  	if (exec) {
+diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nouveau_display.c nouveau-source/nouveau_display.c
+--- nouveau-orig/nouveau_display.c	2026-06-12 01:03:26.000000000 +0300
++++ nouveau-source/nouveau_display.c	2026-10-04 00:00:00.000000000 +0300
+@@ -27,6 +27,7 @@
+  */
+ 
+ #include <acpi/video.h>
++#include <linux/version.h>
+ 
+ #include <drm/drm_atomic.h>
+ #include <drm/drm_atomic_helper.h>
+@@ -764,7 +765,11 @@ nouveau_display_suspend(struct drm_devic
+ {
+ 	struct nouveau_display *disp = nouveau_display(dev);
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 55)
++	drm_client_dev_suspend(dev);
++#else
+ 	drm_client_dev_suspend(dev, false);
++#endif
+ 
+ 	if (drm_drv_uses_atomic_modeset(dev)) {
+ 		if (!runtime) {
+@@ -795,5 +800,9 @@ nouveau_display_resume(struct drm_device
+ 		}
+ 	}
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 55)
++	drm_client_dev_resume(dev);
++#else
+ 	drm_client_dev_resume(dev, false);
++#endif
+ }
+diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/fb/ramgf100.c nouveau-source/nvkm/subdev/fb/ramgf100.c
+--- nouveau-orig/nvkm/subdev/fb/ramgf100.c
++++ nouveau-source/nvkm/subdev/fb/ramgf100.c
+@@ -178,6 +178,50 @@
+ 
+ static bool fexec_resident_running = false;
+ 
++/* VBlank-aligned memory reclock (TODO: Zero-Pause Switching).
++ * Poll head scanline (NV50 rgpos 0x616340 + head*0x800) until inside
++ * vertical blanking (vline >= vblanks from 0x610af0 / vtotal 0x610af8).
++ * Best-effort: fail-open on timeout / display off / NvFermiVblankSync=0.
++ * The 5ms Falcon retraining cannot fit into the ~0.4ms 120Hz blanking,
++ * but starting at blanking onset confines the pause to blanking + top
++ * lines instead of mid-frame tear. */
++static void
++gf100_ram_wait_vblank(struct nvkm_device *device)
++{
++	struct nvkm_subdev *subdev;
++	unsigned long deadline;
++	int head;
++
++	if (!nvkm_boolopt(device->cfgopt, "NvFermiVblankSync", true))
++		return;
++	if (!device->disp || !device->fb)
++		return;
++	subdev = &device->fb->subdev;
++
++	for (head = 0; head < 2; head++) {
++		u32 vtotal, vblanks, vline;
++		u32 state_off = head * 0x540;
++		u32 rgpos_off = head * 0x800;
++
++		vblanks = (nvkm_rd32(device, 0x610af0 + state_off) >> 16) & 0xffff;
++		vtotal  = (nvkm_rd32(device, 0x610af8 + state_off) >> 16) & 0xffff;
++		if (vtotal == 0 || vblanks == 0 || vblanks >= vtotal)
++			continue;
++
++		deadline = jiffies + msecs_to_jiffies(50);
++		while (time_before(jiffies, deadline)) {
++			vline = nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff;
++			if (vline >= vblanks && vline < vtotal)
++				return;
++			usleep_range(200, 500);
++		}
++		nvkm_debug(subdev, "DDR3: vblank wait timeout on head %d (vline %u, blank %u-%u)\n",
++			   head, nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff,
++			   vblanks, vtotal);
++		return;
++	}
++}
++
+ static int
+ gf100_ram_exec_custom(struct gf100_ram *ram, u32 freq)
+ {
+@@ -188,6 +232,10 @@
+ 
+ 	cmd = (freq == 900000) ? 1 : 2;
+ 
++	/* Start retraining at vblank onset so the ~5ms pause lands on
++	 * blanking + top lines instead of mid-frame (best-effort). */
++	gf100_ram_wait_vblank(device);
++
+ 	/* Check if resident executor is already running and ready in Falcon IMEM */
+ 	if (fexec_resident_running) {
+ 		u32 s0 = nvkm_rd32(device, 0x10a080);
+diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nouveau_debugfs.c nouveau-source/nouveau_debugfs.c
+--- nouveau-orig/nouveau_debugfs.c
++++ nouveau-source/nouveau_debugfs.c
+@@ -29,6 +29,8 @@
+  */
+ 
+ #include <linux/debugfs.h>
++#include <drm/ttm/ttm_device.h>
++#include <drm/ttm/ttm_resource.h>
+ #include <nvif/class.h>
+ #include <nvif/if0001.h>
+ #include "nouveau_debugfs.h"
+@@ -135,6 +137,23 @@
+ 		seq_putc(m, '\n');
+ 	}
+ 
++	/* Fermi VRAM telemetry (TODO: Live VRAM Allocation Tracking).
++	 * The gpuva debugfs node only lists UVMM clients, so it stays empty
++	 * on pre-UVMM chips like this GF106. Report exact TTM VRAM manager
++	 * usage here instead; userland parses the VRAM: line. */
++	{
++		struct nouveau_drm *nouveau = nouveau_drm(drm);
++		struct ttm_resource_manager *man =
++			ttm_manager_type(&nouveau->ttm.bdev, TTM_PL_VRAM);
++		if (man) {
++			u64 used = ttm_resource_manager_usage(man);
++			u64 total = nouveau->client.device.info.ram_user;
++			seq_printf(m, "VRAM: %llu MiB / %llu MiB used\n",
++				   (unsigned long long)(used >> 20),
++				   (unsigned long long)(total >> 20));
++		}
++	}
++
+ 	return 0;
+ }
+ 

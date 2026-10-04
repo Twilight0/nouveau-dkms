@@ -54,7 +54,7 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 ## 🎯 Kernel & Hardware Subsystems Roadmap
 
 ### 1. VBlank-Synchronized Memory Reclocking (Zero-Pause Switching)
-- [ ] **Raster Beam / Vertical Blanking Synchronization**:
+- [ ] **Raster Beam / Vertical Blanking Synchronization** (first iteration shipped in `v2.1.0`: `gf100_ram_wait_vblank()` aligns Falcon retraining start to blanking onset; full zero-pause still open):
   - **Goal**: Eliminate the single-frame visual micro-pause (~8.3 ms at 120 Hz) when transitioning memory clocks between `324 MHz` and `900 MHz` upon 3D application launch or exit.
   - **Mechanism**:
     - Query CRTC scanout position register (`0x6100f8` / `0x6160f8` on GF100/GF106 display engine).
@@ -140,7 +140,7 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 ## 🔋 Dynamic Governor & Power Management (`nouveau-dynclockd`)
 
 ### 1. Power Source (AC vs. Battery) Awareness
-- [ ] **Automatic Battery Conservation Profile**:
+- [x] **Automatic Battery Conservation Profile** (shipped in `v2.1.0` via `BATTERY_CAP`, field verification pending):
   - Poll `/sys/class/power_supply/` (e.g., `AC/online`, `BAT0/status`).
   - When on DC (battery), cap maximum performance state to P8 (`07`: `202 MHz` core / `324 MHz` mem @ `0.820 V`), matching proprietary NVIDIA `390.157` driver behavior.
   - Immediately permit P0 (`0f`) / OC (`10`) when AC power adapter is connected.
@@ -165,7 +165,7 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 ## 📊 Telemetry & Monitoring (`nouveau-ctrl` / `nouveau-tui`)
 
 ### 1. Live VRAM Allocation Tracking
-- [ ] **Accurate VRAM Usage Reporting**:
+- [x] **Accurate VRAM Usage Reporting** (shipped in `v2.1.0`, live-verified as root and user):
   - Extract active, pinned, and total allocated VRAM from DRM TTM manager (`/sys/kernel/debug/dri/*/ttm_vram` or sysfs memory stats).
   - Display used/total VRAM in megabytes and percentage across `nouveau-ctrl status` and `nouveau-tui`.
 

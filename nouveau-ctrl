@@ -29,6 +29,15 @@ CLIENTS_CANDIDATES = [
 ]
 HWMON_GLOB = "/sys/class/drm/card0/device/hwmon/hwmon*/"
 CONFIG_PATH = "/etc/nouveau-dynclockd.conf"
+POWER_SUPPLY_BASE = "/sys/class/power_supply"
+VRAM_DEBUGFS_CANDIDATES = [
+    "/sys/kernel/debug/dri/0/ttm_vram",
+    "/sys/kernel/debug/dri/0000:01:00.0/ttm_vram",
+    "/sys/kernel/debug/dri/0/vram_mm",
+    "/sys/kernel/debug/dri/0/gem_objects",
+    "/sys/kernel/debug/dri/0/gpuva",
+    "/sys/kernel/debug/dri/0000:01:00.0/gpuva",
+]
 
 PSTATE_LABELS = {
     "03": "P12 Low-Power Standby / Idle",
@@ -207,6 +216,125 @@ def get_daemon_status():
     except Exception:
         return "unknown"
 
+def get_power_source():
+    """Returns 'AC', 'BAT', or 'UNKNOWN' from /sys/class/power_supply/."""
+    try:
+        if not os.path.isdir(POWER_SUPPLY_BASE):
+            return "UNKNOWN"
+        ac_online = None
+        bat_status = None
+        for name in os.listdir(POWER_SUPPLY_BASE):
+            node = os.path.join(POWER_SUPPLY_BASE, name)
+            ptype = read_sysfs(os.path.join(node, "type")) or ""
+            upper = name.upper()
+            if upper.startswith(("ADP", "AC")) or ptype == "Mains":
+                v = read_sysfs(os.path.join(node, "online"))
+                if v is not None:
+                    ac_online = (v.strip() == "1")
+            if upper.startswith("BAT") or ptype == "Battery":
+                bat_status = read_sysfs(os.path.join(node, "status"))
+        if ac_online is True:
+            return "AC"
+        if ac_online is False:
+            return "BAT"
+        if bat_status == "Discharging":
+            return "BAT"
+        if bat_status in ("Charging", "Full", "Not charging"):
+            return "AC"
+        return "AC" if bat_status is None else "UNKNOWN"
+    except Exception:
+        return "UNKNOWN"
+
+def get_vram_data():
+    """Estimates VRAM usage. Total from kernel log (drm: VRAM: N MiB);
+    used from the governor's world-readable snapshot, else debugfs
+    gpuva/ttm nodes when readable (root). Never raises."""
+    total_mib = None
+    try:
+        for cmd in (["journalctl", "-k", "-b", "0"], ["dmesg"]):
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=5)
+                m = re.search(r"drm:\s*VRAM:\s*(\d+)\s*MiB", out.stdout or "")
+                if m:
+                    total_mib = int(m.group(1))
+                    break
+            except Exception:
+                continue
+    except Exception:
+        pass
+    used_mib = None
+    source = None
+    try:
+        # Governor-published snapshot (world-readable, works as user)
+        snap = "/run/nouveau-fermi-reclock/vram"
+        if os.path.exists(snap) and (time.time() - os.path.getmtime(snap)) < 15:
+            vals = {}
+            with open(snap, "r") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        vals[k.strip()] = v.strip()
+            if "used_mib" in vals:
+                used_mib = float(vals["used_mib"])
+                source = "daemon"
+            if "total_mib" in vals:
+                try:
+                    total_mib = int(float(vals["total_mib"]))
+                except ValueError:
+                    pass
+    except Exception:
+        pass
+    try:
+        # Exact kernel accounting (our patched pstate VRAM: line, root)
+        raw = read_privileged_file(PSTATE_CANDIDATES)
+        if raw:
+            m = re.search(r"VRAM:\s*(\d+)\s*MiB\s*/\s*(\d+)\s*MiB", raw)
+            if m:
+                used_mib = float(m.group(1))
+                total_mib = int(m.group(2))
+                source = "pstate"
+    except Exception:
+        pass
+    try:
+        for node in VRAM_DEBUGFS_CANDIDATES:
+            raw = read_privileged_file(node)
+            if not raw:
+                continue
+            if "gpuva" in node:
+                total_bytes = 0
+                for line in raw.splitlines():
+                    if "|" not in line or "start" in line.lower():
+                        continue
+                    parts = [p.strip() for p in line.split("|")]
+                    # rows look like: '' | 0x<start> | 0x<range> | 0x<end>
+                    hexes = [p for p in parts if re.fullmatch(r"0x[0-9a-fA-F]+", p)]
+                    if len(hexes) >= 2:
+                        try:
+                            total_bytes += int(hexes[1], 16)
+                        except ValueError:
+                            continue
+                if total_bytes > 0:
+                    used_mib = total_bytes / (1024.0 * 1024.0)
+                    source = "gpuva"
+                    break
+            else:
+                m = re.search(r"used\s*[:=]\s*(\d+(?:\.\d+)?)\s*(MiB|MB|KiB|KB|bytes)?", raw, re.IGNORECASE)
+                if m:
+                    val = float(m.group(1))
+                    unit = (m.group(2) or "KiB").lower()
+                    if unit.startswith("m"):
+                        used_mib = val
+                    elif unit.startswith("k"):
+                        used_mib = val / 1024.0
+                    else:
+                        used_mib = val / (1024.0 * 1024.0)
+                    source = os.path.basename(node)
+                    break
+    except Exception:
+        pass
+    pct = (100.0 * used_mib / total_mib) if (used_mib is not None and total_mib) else None
+    return {"total_mib": total_mib, "used_mib": used_mib, "pct": pct, "source": source}
+
 def get_drm_clients():
     raw = read_privileged_file(CLIENTS_CANDIDATES)
     if not raw:
@@ -276,10 +404,23 @@ def cmd_status(args):
 
     daemon_str = f"\033[32mActive (running)\033[0m" if daemon == "active" else f"\033[33m{daemon}\033[0m"
 
+    power = get_power_source()
+    power_str = {"AC": "AC (unlimited 0f/10)", "BAT": "Battery DC (capped 07)"}.get(power, "Unknown")
+
+    vram = get_vram_data()
+    if vram["total_mib"] and vram["used_mib"] is not None:
+        vram_str = f"{vram['used_mib']:.0f} / {vram['total_mib']:.0f} MiB ({vram['pct']:.0f}% via {vram['source']})"
+    elif vram["total_mib"]:
+        vram_str = f"? / {vram['total_mib']:.0f} MiB (run as root for live usage)"
+    else:
+        vram_str = "N/A"
+
     print(f" • Temperature:    {temp_str}")
     print(f" • Core Voltage:   {volt_str}")
     print(f" • Fan Speed:      {fan_str}")
     print(f" • PCIe Link:      {pcie_str}")
+    print(f" • VRAM Usage:     {vram_str}")
+    print(f" • Power Source:   {power_str}")
     print(f" • Dynamic Daemon: nouveau-dynclockd ({daemon_str})")
     print("--------------------------------------------------------------------------------")
 
