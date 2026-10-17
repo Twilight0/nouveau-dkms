@@ -334,10 +334,18 @@ Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, 
     4. Alerts immediately if a newly released kernel header breaks compilation—catching DRM API shifts *before* `aliveos-repo` package builds run.
 - [ ] **Rename / Provide Unified Package `nouveau-reclocking-dkms`**:
   - Transition `nouveau-fermi-reclock-dkms` $\to$ `nouveau-reclocking-dkms` (and pre-built kernel packages `nouveau-reclocking-*`) with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` once multi-architecture support lands.
+- [ ] **Cross-Distribution Packaging Pipeline (Debian/Ubuntu `.deb`, Fedora/openSUSE `.rpm`, Gentoo, NixOS & Universal Installer)**:
+  - Build a unified GitHub Actions release pipeline (`.github/workflows/release-packages.yml`) that automatically builds and attaches native packages for all major Linux distributions on every tagged release:
+    1. **Arch Linux / AliveOS / CachyOS / Manjaro (`.pkg.tar.zst`)**: `PKGBUILD` (DKMS + pre-built kernel module packages in `aliveos-repo` and AUR).
+    2. **Debian / Ubuntu / Linux Mint / Pop!_OS (`.deb`)**: `debian/` packaging (`dh-dkms`, `dpkg-buildpackage`) producing a `nouveau-reclocking-dkms_<ver>_all.deb` package that automatically triggers DKMS build + `update-initramfs -u` and enables `nouveau-dynclockd.service`.
+    3. **Fedora / RHEL / Alma / Rocky / openSUSE (`.rpm` + Fedora COPR / Open Build Service)**: RPM `.spec` file producing `nouveau-reclocking-dkms-<ver>.noarch.rpm` with `dracut --force` post-transaction hooks.
+    4. **Gentoo (`sys-kernel/nouveau-reclocking-dkms` ebuild)** & **NixOS (`flake.nix` `boot.extraModulePackages` + `systemd.services.nouveau-dynclockd` module)**.
+    5. **Universal Distro-Agnostic `Makefile` (`sudo make dkms-install`)**: Fallback installer for Slackware, Void, Alpine, or custom distros.
 - [ ] **Mesa `NVC0` Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) & VA-API Compute Encoder Validation**:
   - Prototype bound-descriptor Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) and VA-API H.264 compute encoding on `NVC0` under full P0/OC clocks.
 - [ ] **OpenCL 3.0 (`Rusticl`), Unified Memory AI Inference & `PCOPY` VRAM-as-RAM Block Device ([`VRAM_AI.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VRAM_AI.md))**:
   - Unlock full `~2.75 GiB` OpenCL tensor allocations on `nvc0`, transparent `VRAM | GART` oversubscription for `> 3 GiB` LLMs, and `/dev/nvram0` `PCOPY` DMA-backed upper-VRAM system memory/swap pooling as detailed in [`VRAM_AI.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VRAM_AI.md).
+
 
 
 
