@@ -1048,22 +1048,33 @@ Disassembling the Fermi PMU HAL in `nv-kernel.o_binary` (`0x5158d0–0x5168c0`) 
 
 ---
 
-### 10.4 `nv-kernel.o_binary`: The RM Sequencer (`OBJSEQ` / `seqScript` / MEMX) Bytecode Emitter API
+### 10.4 `nv-kernel.o_binary`: The RM Sequencer (`OBJSEQ` / `seqScript` / MEMX) Bytecode Emitter API & Zero-Flash VBlank Pipeline
 
-Every memory reclocking function in RM (`_nv010721rm`, `_nv015935rm`, `_nv015936rm`, etc.) does not write to PFB/MEMPLL registers directly from the CPU; instead, it emits instructions into a Sequencer Script (`pSeqScript`) via the `OBJSEQ` (`_nv0318xxrm`) API (`0x52f8a0–0x532150`), which is then dispatched to the PMU (or host interpreter) during VBlank:
+Every memory reclocking function in RM (`_nv010721rm`, `_nv015935rm`, `_nv015936rm`, etc.) does not write to PFB/MEMPLL registers directly from the CPU; instead, it emits instructions into a Sequencer Script (`pSeqScript`) via the `OBJSEQ` (`_nv0318xxrm`) API (`0x52f8a0–0x532960`), which is then dispatched to the PMU (or host interpreter) during VBlank:
 
-| RM Function | Address | Equivalent in Nouveau `ramfuc.h` | Behavior & Disassembled Details |
-|---|---|---|---|
-| `_nv031894rm(pSeqScript, flags)` | `0x52f8a0` | `nvkm_memx_init()` | Opens a new sequencer script buffer (`flags = 0x5` for MCLK switch). |
-| `_nv031896rm(pSeqScript, stopFlags, timeoutUs)` | `0x52f9b0` | `nvkm_memx_block()` | Emits `STOP_FB` (`stopFlags = 0x20` or `0x22`, `timeout = 0x19` $\mu\text{s}$). |
-| `_nv031872rm(pSeqScript, headMask)` | `0x52ff50` | `ram_wait_vblank()` | Emits `WAIT_VBLANK` (opcode `0x43`) for active display heads. |
-| `_nv031893rm(pSeqScript, reg, val)` | `0x52fb10` | `ram_wr32(fuc, reg, val)` | Calls `_nv031837rm` (`0x5320b0`) to append a 32-bit register write to the script buffer (coalescing consecutive writes into burst packets). |
-| `_nv031890rm(pSeqScript, delayUs)` | `0x52fa20` | `ram_nsec(fuc, delayUs * 1000)` | Multiplies `delayUs * 1000` (`imul $0x3e8, %esi, %esi`) and calls `_nv031832rm` (`0x531f80`) to emit a nanosecond delay! |
-| `_nv031889rm(pSeqScript, delayUs)` | `0x52fa00` | `ram_nsec(fuc, ...)` | Multiplies `delayUs * 1000` and calls `_nv031833rm` (`0x531f40`, bus-flush + delay). |
-| `_nv031884rm(pSeqScript, reg, mask, val, timeout)` | `0x52fd60` | `ram_wait(fuc, reg, mask, val, timeout)` | Emits a register poll instruction into the script. |
-| `_nv031860rm(pGpu, pSeq, pSeqScript)` | `0x531b60` | `nvkm_memx_unblock()` + IHUB/DMI update | Emits post-MCLK display watermark/spool-up updates (`0x616300+`) and unfreezes FB (`_nv031896rm(..., 0, 0)`). |
-| `_nv031886rm(pSeqScript)` | `0x52fa80` | *(end of script)* | Closes and validates the sequencer script (`seqScriptClose`). |
-| `_nv031868rm(pGpu, pSeq, pSeqScript)` | `0x52f910` | `nvkm_memx_fini()` | Executes the closed script (`seqScriptRun`), followed by `_nv031895rm` (`0x52f920`) waiting for completion. |
+| RM Function | Address | Sequencer Opcode | Equivalent in Nouveau `ramfuc.h` | Behavior & Disassembled Details |
+|---|---|---|---|---|
+| `_nv031894rm(pSeqScript, flags)` | `0x52f8a0` | *(init)* | `nvkm_memx_init()` | Opens a new sequencer script buffer (`flags = 0x5` for MCLK switch). |
+| `_nv031916rm(pGpu, pSeq, pSeqScript, flags, timeoutUs)` | `0x5316a0` | `0x14` + `0x22` + `0x24` + `0x20` | `nvkm_memx_block()` | **Master `STOP_FB` sequence**: boosts `ISOHUB` watermarks (`0x12`), emits `WAIT_VBLANK` (`0x14`), captures start PTIMER (`0x24` $\to$ `[+0xa0]`), and emits `FB_STOP(1)` (`0x20`). |
+| `_nv031831rm(pSeq, pSeqScript, headMask, flag)` | `0x532470` | `0x14` | `ram_wait_vblank()` | Emits `NV_SEQ_OPC_WAIT_VBLANK` (timeout `0x1dcd6500` = `500 ms` inside Falcon script). |
+| `_nv031872rm(pSeqScript, headMask)` | `0x52ff50` | `0x43` | `ram_wait_vblank()` | Emits `NV_SEQ_OPC_WAIT_VBLANK_DIRECT` (`0x43`) for active display heads. |
+| `_nv031828rm(pSeq, pSeqScript, stopBool)` | `0x5323e0` | `0x20` | `STOP_FB` / `UNSTOP_FB` | Emits `NV_SEQ_OPC_FB_STOP` (`1` = freeze FB, `0` = unfreeze FB). |
+| `_nv031893rm(pSeqScript, reg, val)` | `0x52fb10` | `0x01` + burst | `ram_wr32(fuc, reg, val)` | Calls `_nv031837rm` (`0x5320b0`) $\to$ `_nv007083rm` (`0x532160`) to append a 32-bit register write (and calls `[pSeq + 0x358]` = `_nv031754rm` hook first!). |
+| `_nv031754rm(pSeq, pSeqScript, reg)` | `0x531560` | **`0x3a`** | *(missing in Nouveau)* | **Solved Mystery Opcode `0x3a` (§4.7)!** Counts writes to PHY training ranges `0x10f590..0x10f8ff` and `0x10fb00..0x10fdff` in `[pSeqScript + 0x90]`. As soon as a write targets a register outside `0x10f000..0x10ffff`, it writes `0x0` to `0x13d7f4 + (part << 6)` (partition write-buffer flush) and emits **opcode `0x3a`** with the burst count! |
+| `_nv031890rm(pSeqScript, delayUs)` | `0x52fa20` | `0x2c` | `ram_nsec(fuc, delayUs * 1000)` | Multiplies `delayUs * 1000` (`imul $0x3e8`) and calls `_nv031832rm` (`0x531f80`) $\to$ `_nv031821rm` (`0x532710`) to emit a nanosecond delay (`0x2c`). |
+| `_nv031889rm(pSeqScript, delayUs)` | `0x52fa00` | `0x2d` | `ram_nsec(fuc, ...)` | Multiplies `delayUs * 1000` and calls `_nv031833rm` (`0x531f40`) $\to$ `_nv031834rm` (`0x532450`, opcode `0x2d`). |
+| `_nv031884rm(pSeqScript, reg, mask, val, timeout)` | `0x52fd60` | `0x0d` + `0x15` | `ram_wait(fuc, reg, mask, val, timeout)` | Calls `_nv031823rm` (`0x5322f0`) to emit register read (`0x0d`) + poll (`0x15`, timeout $\mu\text{s} \times 1000$). |
+| `_nv031860rm(pGpu, pSeq, pSeqScript)` | `0x531b60` | `0x20` + `0x25` + `0x23` | `nvkm_memx_unblock()` + ISOHUB restore | **Master `RESTART_FB` sequence**: emits `FB_STOP(0)` (`0x20`), captures end PTIMER (`0x25` $\to$ `[+0xa4]`), and restores normal `ISOHUB` display watermarks (`pIsohub->vtable[0xd8]`). |
+| `_nv031861rm(pGpu, pSeq, pSeqScript)` | `0x531dd0` | *(post-check)* | *(missing in Nouveau)* | Computes `elapsed_us = (end_ns - start_ns + 500) / 1000` (`[+0xa4] - [+0xa0]`) and verifies `elapsed_us <= max_vblank_us` (`[+0xa8]`). |
+| `_nv031886rm(pSeqScript)` | `0x52fa80` | `0x16` | *(end of script)* | Calls `_nv031829rm` (`0x532550`) to emit `NV_SEQ_OPC_EXIT` (`0x16`). |
+| `_nv031868rm(pGpu, pSeq, pSeqScript)` | `0x52f910` | *(run)* | `nvkm_memx_fini()` | Executes the closed script (`seqScriptRun`), followed by `_nv031895rm` (`0x52f920`) waiting for completion. |
+
+#### Why Screen Flashes Still Occur on Clock Changes in Our Driver & How `_nv031916rm` / `_nv031860rm` Fix Them
+1. **In-Falcon `WAIT_VBLANK` vs. Host-CPU Polling**:
+   - In our current `ramgf100.c`, `gf100_ram_wait_vblank()` polls `0x6160f8` on the **host CPU** before triggering the Falcon. Any host scheduling jitter or MMIO setup occurs *after* VBlank has already started, pushing `STOP_FB` past the ~370 $\mu\text{s}$ VBlank window into active scanout.
+   - In `390.157` (`_nv031916rm` @ `0x531943` / `0x531b33`), `WAIT_VBLANK` (opcode `0x14`) is executed **inside the PMU Falcon script itself** right before `FB_STOP(1)` (opcode `0x20`), giving `< 50 ns` hardware reaction time from VBlank entry to `STOP_FB`.
+2. **Pre-`STOP_FB` Display `ISOHUB` Critical Watermark Spool-Up (`_nv031916rm` @ `0x5317d4`)**:
+   - Before entering VBlank, `_nv031916rm` calls `pIsohub->vtable[0xd8]` with `0x12` to force the display `ISOHUB` (`0x616300+`) to pre-fill the scanout FIFO to 100%, and `_nv031860rm` (`0x531c63`) restores normal `ISOHUB` watermarks after `FB_STOP(0)`.
 
 ---
 

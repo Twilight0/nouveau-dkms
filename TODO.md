@@ -8,7 +8,7 @@ This document tracks completed milestones, planned features, architectural impro
 
 - [x] **v1.0 Baseline Fermi Core & Shader Reclocking**:
   - Implemented stable core and shader clock scaling (`50 MHz` / `202 MHz` / `590 MHz` core; `101 MHz` / `405 MHz` / `1180 MHz` shader).
-  - Unlocked 120 Hz eDP display mode (`1920x1080 @ 120Hz`, pixel clock `396.36 MHz`) without scanout underflows or timing corruption.
+  - Unlocked 120 Hz eDP display mode (`1920x1080 @ 120Hz`, pixel clock `396.36 MHz`). *(Note: Visual screen flashes during P-state / MCLK transitions remain open and are tracked in §1 below.)*
 - [x] **v1.1 Voltage Table & Overclocking Fixes**:
   - Resolved `0f` undervolting bug (`870 mV` vs factory `1030 mV`) by enforcing authoritative voltage table mapping.
   - Added synthetic `0x10` OC P-State (`700 MHz` core / `1400 MHz` shader @ `1030 mV`), gated by the `NvFermiOC` module parameter.
@@ -53,13 +53,29 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 
 ## 🎯 Kernel & Hardware Subsystems Roadmap
 
-### 1. VBlank-Synchronized Memory Reclocking (Zero-Pause Switching)
-- [ ] **Raster Beam / Vertical Blanking Synchronization** (first iteration shipped in `v2.1.0`: `gf100_ram_wait_vblank()` aligns Falcon retraining start to blanking onset; full zero-pause still open):
-  - **Goal**: Eliminate the single-frame visual micro-pause (~8.3 ms at 120 Hz) when transitioning memory clocks between `324 MHz` and `900 MHz` upon 3D application launch or exit.
-  - **Mechanism**:
-    - Query CRTC scanout position register (`0x6100f8` / `0x6160f8` on GF100/GF106 display engine).
-    - Hook the Falcon PMU memory transition trigger into the hardware VBlank interrupt window or poll for raster line within vertical front porch / blank interval.
-    - Ensure DLL retraining and MEMPLL re-lock sequence completes before the first active scanout line of the subsequent frame.
+### 1. Eliminating Screen Flashes During Clock Changes (True VBlank-Synchronized Memory Reclocking)
+- [ ] **Zero-Flash VBlank & ISOHUB Synchronized Memory Reclocking** *(Unresolved — host-side `gf100_ram_wait_vblank()` still exhibits visible screen flashes during P-state transitions)*:
+  - **Why Screen Flashes Still Occur in Our Current Implementation**:
+    1. **Host-Side VBlank Polling Latency**: Currently, `gf100_ram_wait_vblank()` polls `0x6160f8` on the **host CPU** before invoking `gf100_ram_exec_custom()`. Any host scheduling delay, MMIO setup, or cold Falcon bootstrap happens *after* VBlank onset, causing the Falcon's `STOP_FB` (`0x100c80` / `0x10a50c`) and DDR3 Self-Refresh window (~150–250 µs) to spill out of the ~370 µs vertical blanking interval into active scanout!
+    2. **Missing Display ISOHUB FIFO Pre-Fill / Spool-Up**: Without boosting the display `ISOHUB` (`0x616300+`) watermarks to critical force-fill mode right before `STOP_FB`, the display scanout FIFO drains during the memory freeze, causing a visible horizontal flash/glitch line.
+    3. **Overlapping PCIe Gen1 $\leftrightarrow$ Gen2 Retraining**: Performing PCIe link retraining (`50–200 µs` bus stall) back-to-back with MCLK switching in `nvkm_pstate_prog()` stretches total bus unavailability beyond a single VBlank window.
+  - **How `390.157` Eliminates Flashes (`_nv031916rm` @ `0x5316a0`, `_nv031860rm` @ `0x531b60`, `_nv031861rm` @ `0x531dd0`, `_nv031754rm` @ `0x531560`)**:
+    1. **Pre-`STOP_FB` ISOHUB Critical Watermark Boost (`_nv031916rm` @ `0x5317d4`)**:
+       - Calls `pIsohub->vtable[0xd8]` with state `0x12` before waiting for VBlank, forcing the display `ISOHUB` (`0x6163xx`) to top up the scanout line buffer FIFO to 100% capacity during the last active scanlines of the frame.
+    2. **Falcon-Side In-Script VBlank Wait (`_nv031831rm` @ `0x532470`, Opcode `0x14` / `_nv031872rm` @ `0x52ff50`, Opcode `0x43`)**:
+       - Rather than waiting on the host CPU, RM emits **`WAIT_VBLANK` (opcode `0x14`) directly inside the PMU Falcon script** immediately prior to **`STOP_FB` (opcode `0x20`, `_nv031828rm` @ `0x5323e0`)**.
+       - The Falcon microcontroller itself polls the display head VBlank / DMI blanking signal in hardware and asserts `STOP_FB` on the **very next Falcon clock cycle (<50 ns latency)** after VBlank begins!
+    3. **FB Partition Write-Buffer Flush (`_nv031754rm` @ `0x531560`, Opcode `0x3a`)**:
+       - After programming the PHY DLL/training registers (`0x10f590..0x10f8ff`), RM writes `0x0` to `0x13d7f4 + (part << 6)` to flush the partition write buffers and executes opcode `0x3a` before unfreezing FB.
+    4. **Post-`RESTART_FB` ISOHUB Restoration & PTIMER Verification (`_nv031860rm` @ `0x531b60` & `_nv031861rm` @ `0x531dd0`)**:
+       - `_nv031860rm` unfreezes FB (`_nv031887rm(pSeqScript, 0)`), records the end PTIMER timestamp (`opcode 0x24/0x25` into `[pSeqScript + 0xa4]`), and restores normal ISOHUB watermarks (`pIsohub->vtable[0xd8]`).
+       - `_nv031861rm` computes `elapsed_us = (end_ns - start_ns + 500) / 1000` (`mul $0x10624dd3; shr $0x6`) and verifies that the entire `STOP_FB` $\to$ `RESTART_FB` window completed strictly inside the head's DMI blanking budget (`[pSeqScript + 0xa8]`).
+  - **Actionable Implementation Plan for `nouveau-fermi-reclock`**:
+    1. **Move VBlank Polling Inside `memx_exec_custom.fuc`**: Have the resident Falcon microcode poll the active CRTC's VBlank / raster line register (`0x6160f8` via PDAEMON I/O or host-mapped aperture) *inside* the Falcon right before writing `0x10a50c = 0x1` / `0x100c80 = 0x1` (`STOP_FB`), eliminating all host-to-PMU latency.
+    2. **Pre-Warm the Falcon Executor at Boot & Resume**: Ensure the cold bootstrap (`gf100_ram_exec_custom` cold path) runs during init/resume while the display is blanked or before switching, so runtime P-state transitions **always** take the zero-upload fast path (`SCRATCH` trigger).
+    3. **Program ISOHUB (`0x6163xx`) Pre-Fill & Partition Flush (`0x13d7f4`)**: Emit the ISOHUB critical watermark boost before `STOP_FB`, the `0x13d7f4 + (part << 6)` flush after `0x10f824`, and ISOHUB watermark restoration after `RESTART_FB`.
+    4. **Decouple PCIe Link Retraining from MCLK VBlank**: Wait for a separate VBlank edge before executing PCIe Gen1 $\leftrightarrow$ Gen2 link retraining so PCIe retraining never steals time from the MCLK `STOP_FB` VBlank budget.
+
 
 ### 2. Dynamic PCIe Link Speed Scaling (Gen1 $\leftrightarrow$ Gen2)
 - [x] **Automatic Gen1 (2.5 GT/s) $\leftrightarrow$ Gen2 (5.0 GT/s) Switching (Verified & Operational)**:
