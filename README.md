@@ -112,6 +112,8 @@ All reverse-engineering findings (including Ghidra + REA decompilation of NVIDIA
 | **[`NVENC.md`](NVENC.md)** | Video encoding & decoding architecture: `x264 --opencl` lookahead, the planned 4-stage **Hybrid Compute-Shader `VA-API` H.264 Encoder** for OBS Studio (`NVCUVENC` equivalent), `VP4` PureVideo HD firmware extraction, and Kepler/Maxwell `MSENC` (`0x1c8000`). |
 | **[`CHANGELOG.md`](CHANGELOG.md)** | Versioned release history (`v1.0.0` through `v2.1.0`). |
 | **[`PATCH_HISTORY.md`](PATCH_HISTORY.md)** | Detailed catalog of incremental patches in `patches/` and 1-command rollback instructions. |
+| **[`3D_VISION.md`](3D_VISION.md)** | Stereoscopic 3D guide: active-shutter glasses on Linux, `libnvstusb` USB IR emitter protocol, and 3D movie playback via Kodi, `bino`, and `mpv`. |
+| **[`FEATURES_BREAKDOWN_CHECKLIST.md`](FEATURES_BREAKDOWN_CHECKLIST.md)** | Architectural classification: kernel driver (`nouveau.ko`) vs. companion user-space tools (`nouveau-tools`) vs. upstream Mesa components, plus downstream packaging strategies. |
 | **[`CONTRIBUTING.md`](CONTRIBUTING.md)** | Instructions for running `tools/nouveau-fermi-diag.py` and submitting hardware telemetry for additional Fermi/Kepler/Maxwell GPUs. |
 
 ---
