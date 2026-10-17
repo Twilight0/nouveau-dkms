@@ -311,6 +311,9 @@ Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, 
   - Transition `nouveau-fermi-reclock-dkms` $\to$ `nouveau-reclocking-support-dkms` (and pre-built kernel packages) with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` once multi-architecture support lands.
 - [ ] **Upstream `nouveau` Patchset Submission**:
   - Organize clean RFC patch series for the Linux `dri-devel` mailing list.
-- [ ] **Mesa `NVC0` Vulkan (`VULKAN.md`) & VA-API Compute Encoder Validation**:
-  - Prototype bound-descriptor Vulkan (`VULKAN.md`) and VA-API H.264 compute encoding on `NVC0` under full P0/OC clocks.
+- [ ] **Mesa `NVC0` Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) & VA-API Compute Encoder Validation**:
+  - Prototype bound-descriptor Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) and VA-API H.264 compute encoding on `NVC0` under full P0/OC clocks.
+- [ ] **OpenCL 3.0 (`Rusticl`), Unified Memory AI Inference & `PCOPY` VRAM-as-RAM Block Device ([`VRAM_AI.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VRAM_AI.md))**:
+  - Unlock full `~2.75 GiB` OpenCL tensor allocations on `nvc0`, transparent `VRAM | GART` oversubscription for `> 3 GiB` LLMs, and `/dev/nvram0` `PCOPY` DMA-backed upper-VRAM system memory/swap pooling as detailed in [`VRAM_AI.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VRAM_AI.md).
+
 
