@@ -179,27 +179,58 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
   - **Implementation Tasks**:
     1. Decompile `_nv029625rm` (`0x515a70`), `_nv029628rm` (`0x515ad0`), and their callers in `nv-kernel.o_binary` to extract the exact signal filter masks written to PDAEMON counter slots `0x10a600 + idx*4` (`idx = 0..4`) and counter readout offsets (`0x10a5xx`).
     2. Configure the hardware idle/busy counters in `nvkm/subdev/pmu/gf100.c` (making sure they coexist cleanly with `memx_exec_custom.fuc`).
-    3. Expose hardware GPU load `%` and memory controller load `%` via debugfs/sysfs (`gpu_load`) and wire them into `nouveau-dynclockd`, `nouveau-ctrl`, and `nouveau-tui`.
+    3. Expose hardware GPU load `%` (`GR`), memory controller load `%` (`FB`), and video engine load `%` (`VDEC`) via `/sys/kernel/debug/dri/*/pstate` and wire them into `nouveau-dynclockd`, `nouveau-ctrl`, and `nouveau-tui`.
+
+### 7. Single-Fan Shared Thermal Protection (`PTHERM` `0x00020xxx`) & L2 / Z-Cull Compression
+- [ ] **Hardware `PTHERM` Auto-Slowdown & Single-Fan Chassis Thermal Coordination**:
+  - **Platform Context (Dell XPS L702X 3D Vision Edition)**:
+    - Because the 120 Hz 3D Vision eDP panel (`LGD 0x02c5`) is wired directly to the discrete GT 555M (`01:00.0`) with the Sandy Bridge iGPU permanently disabled in BIOS (non-Optimus), the NVIDIA GPU drives the display 100% of the time.
+    - The laptop uses a **single shared chassis blower fan** controlled by the Dell Embedded Controller (`dell-smm-hwmon` / `i8k`) to cool both the Intel CPU and the NVIDIA GT 555M heatpipes simultaneously.
+  - **Implementation Tasks**:
+    1. **Hardware `PTHERM` Clock-Slowdown Failsafe (`0x00020xxx`)**: Reverse-engineer the Fermi thermal slowdown registers in `nv-kernel.o_binary` so the GPU hardware itself automatically divides the core/shader clock if die temperature reaches `90–92 °C`, even if userspace is unresponsive.
+    2. **Progressive Multi-Step Thermal Throttling for Single-Fan Cooling**: Instead of an abrupt `0f` $\to$ `07` drop at `80 °C`, step down smoothly across P-states (`10` OC $\to$ `0f` P0 at `78 °C` $\to$ `0a` P3 at `82 °C` $\to$ `07` P8 at `86 °C`) so the single blower fan can stabilize heatpipe temperatures during combined CPU+GPU workloads (such as gaming + OBS streaming) without tanking framerate.
+- [ ] **L2 Cache (`PLTCG` `0x140000`) & `PGRAPH` Z-Cull / Tile Compression Optimization**:
+  - Compare `nv-kernel.o_binary`'s initialization of `PLTCG` (`0x140xxx`) and `PGRAPH` Z-Cull / ROP compression registers against upstream Nouveau to ensure lossless depth/color bandwidth compression is fully active on Fermi.
+
+### 8. GPU Video Encoding (OBS Studio / `VA-API`) & Hardware Decoding (`VP4` / `MSENC`)
+- [ ] **Standard `VA-API` (`VAEntrypointEncSlice`) Hybrid Shader/Compute H.264 Encoder for Fermi (`NVCUVENC` Open-Source Equivalent)**:
+  - **Hardware Context**:
+    - On the non-Optimus Dell XPS L702X 3D Vision laptop (Intel iGPU disabled in BIOS) and on all Fermi (`GF100`–`GF119`) GPUs, there is no fixed-function `NVENC` ASIC (which debuted in Kepler `GK104`).
+    - In the proprietary driver era, NVIDIA provided GPU-accelerated H.264 encoding on Fermi via **`NVCUVENC` (`libnvidia-encode.so`)**, which executed the heavy parallel stages of H.264 encoding on **Fermi's Shader/Compute cores (`1180–1400 MHz` hot clock) + `MSPPP` + `PCOPY` DMA**.
+  - **How to Expose It to OBS Studio, FFmpeg & Standard Linux Apps**:
+    - Standard Linux streaming and recording apps (OBS Studio, FFmpeg `-c:v h264_vaapi`, PipeWire, GStreamer) discover hardware encoders by querying **VA-API (`libva`, `/usr/lib/dri/nouveau_drv_video.so`)** for `VAProfileH264ConstrainedBaseline` / `VAProfileH264Main` with **`VAEntrypointEncSlice`**.
+    - By implementing a **Compute-Shader-Backed `pipe_video_codec` H.264 Encoder** inside Mesa's Gallium VA frontend (`nvc0`), every VA-API application automatically sees a native hardware H.264 encoder:
+      1. **Stage 1 — Zero-Copy DMA-BUF Input & GPU `RGB` $\to$ `NV12` Conversion (`< 0.3 ms`)**:
+         - OBS Studio passes the rendered desktop/game texture directly as a GPU `DMA-BUF` into VA-API. A lightweight `nvc0` compute/fragment shader converts `BGRX/RGBA` $\to$ `NV12` (and scales if needed) entirely in VRAM, eliminating raw 1080p frame readbacks over PCIe.
+      2. **Stage 2 — Parallel Hierarchical Motion Estimation on Fermi SMs (`NVC0_COMPUTE` `0x90c0`)**:
+         - Offloads ~70% of H.264 encoding cost onto the GT 555M's 144 shader cores (`3 SMs × 48 cores @ 1300–1400 MHz`) using 48 KB on-chip Shared Memory per SM to perform 16×16 / 8×8 SAD/SATD diamond/hexagon motion search across macroblocks in parallel.
+      3. **Stage 3 — GPU 4×4 / 8×8 Integer DCT, Quantization & Intra Prediction**:
+         - Compute shaders transform and quantize macroblock residuals and write compact `[motion_vectors + quantized_coeffs]` into a host-visible ring buffer via Fermi's async `PCOPY` DMA engine.
+      4. **Stage 4 — Lightweight Host CAVLC / CABAC Bitstream Packer**:
+         - A single fast CPU thread packs the GPU-computed quantized coefficients and motion vectors into compliant H.264 `NAL` slices (~5% CPU usage) and returns the `VACodedBufferSegment` to OBS / FFmpeg.
+- [ ] **Immediate OBS Studio / `x264` OpenCL Lookahead Acceleration via Mesa `Rusticl`**:
+  - Configure and validate **Mesa `Rusticl`** (`RUSTICL_ENABLE=nouveau` OpenCL 3.0 on `nvc0`) so OBS Studio's `x264` encoder (`opencl=true`) can immediately offload frame downscaling, intra-cost analysis, and motion lookahead onto the GT 555M shader cores.
+- [ ] **PureVideo HD `VP4` Hardware Video Decode (`MSVLD` / `MSPDEC` / `MSPPP`) Firmware Extractor**:
+  - Ship a helper utility (`nouveau-extract-fw`) that extracts the `VP4` (`nv98_fuc084`, `nv98_fuc085`, `nv98_fuc086`) Falcon video decode firmware from `NVIDIA-Linux-x86_64-390.157.run` into `/lib/firmware/nouveau/`, enabling zero-CPU 1080p60 H.264 / VC-1 / MPEG-2 hardware decoding in Firefox, Chromium, MPV, and VLC via VA-API and VDPAU.
+- [ ] **Fixed-Function `MSENC` / `NVENC` (`0x1c8000`) Support for Kepler (`GK104+`) & Maxwell 1 (`GM107+`)**:
+  - Reverse-engineer the `MSENC` (`0x1c8000`) Falcon microcode loader and H.264 bitstream command queue from `390.157` (`nv-kernel.o_binary` & `libnvidia-encode.so.390.157`) to unlock fixed-function `NVENC` via VA-API on Kepler and Maxwell GPUs as the project expands.
 
 ---
-
 
 ## ⚡ Falcon Microcode & Memory Controller Expansion
 
 ### 1. Generalizing Falcon Executor for the Fermi Family
-- [ ] **GF100 / GF104 / GF108 / GF114 / GF116 Support**:
-  - Decouple hardcoded GF106 DDR3 PHY offsets in [`ramgf100.c`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-source/nvkm/subdev/fb/ramgf100.c).
-  - Implement dynamic register block parsing to support 128-bit, 192-bit, 256-bit, and 384-bit memory bus configurations.
-  - Auto-extract memory timing tables (CAS, tRCD, tRP, tRAS, tRFC) directly from VBIOS performance tables.
+- [ ] **GF100 / GF104 / GF108 / GF114 / GF116 / GF117 / GF119 Support**:
+  - Decouple hardcoded GF106 DDR3 PHY offsets in [`ramgf100.c`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-source/nvkm/subdev/fb/ramgf100.c) using the per-family RM emitters (`_nv015935rm` GF100, `_nv015936rm` GF104/GF106, `_nv015937rm` GF108, `_nv015938rm` GF119) and calculators (`_nv014883rm`, `_nv014880rm`, `_nv015894rm`, `_nv015895rm`).
+  - Support 64-bit, 128-bit, 192-bit, 256-bit, 320-bit, and 384-bit partition topologies via `[pFb + 0xd20]` (`_nv016234rm` / `_nv016235rm`).
 
 ### 2. GDDR5 Memory Support
 - [ ] **GDDR5 Timing & Calibration Engine**:
-  - Implement PHY write/read training, DLL phase tracking, and command/address bus retraining for GDDR5-equipped Fermi desktop cards (e.g., GTX 460/470/480, GTX 560 Ti/570/580).
-  - Replicate driver-level handshake for GDDR5 link reset and CRC error check registers.
+  - Extract the GDDR5 branches of `_nv010721rm` (`0xec6b0`) and `_nv010722rm` (`0x104470`) to support GDDR5-equipped Fermi desktop and mobile cards (e.g., GT 555M GDDR5 variant, GTX 460/470/480, GTX 560 Ti/570/580).
 
 ---
 
-## 🔋 Dynamic Governor & Power Management (`nouveau-dynclockd`)
+## 🔋 Dynamic Governor & Power Management (`nouveau-dynclockd` 2.0 Modernization)
 
 ### 1. Power Source (AC vs. Battery) Awareness
 - [x] **Automatic Battery Conservation Profile** (shipped in `v2.1.0` via `BATTERY_CAP`, field verification pending):
@@ -207,20 +238,40 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
   - When on DC (battery), cap maximum performance state to P8 (`07`: `202 MHz` core / `324 MHz` mem @ `0.820 V`), matching proprietary NVIDIA `390.157` driver behavior.
   - Immediately permit P0 (`0f`) / OC (`10`) when AC power adapter is connected.
 
-### 2. Zero-Overhead eBPF / Perf Tracepoint GPU Load Detection
-- [ ] **Event-Driven Workload Detection**:
-  - Replace polling loop (`/sys/kernel/debug/dri/*/clients`) with eBPF kprobes or kernel tracepoints:
-    - `nouveau:nouveau_bo_move`
-    - `nouveau:nouveau_fence_wait`
-    - DRM engine pushbuffer submission IOCTLs (`DRM_IOCTL_NOUVEAU_GEM_PUSHBUF`).
-  - Zero CPU overhead when idle; near-instantaneous (<2 ms) reaction time to 3D rendering spikes.
+### 2. Replace `/proc` CPU-Tick Scanning with True Hardware GPU Load Counters (`0x10a600..0x10a610`)
+- [ ] **Hardware-Counter-Driven Scaling in `nouveau-dynclockd`**:
+  - **Problem**: [`get_monitored_app_ticks()`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-dynclockd.py#L221-L240) currently scans every `/proc/[0-9]*/comm` and `/proc/[0-9]*/stat` on the system once per second to measure **CPU ticks** of browsers/compositors—boosting the GPU on CPU-only JavaScript loads while missing GPU-bound WebGL shaders that use <5% CPU.
+  - **Solution**: Read the kernel-exposed PDAEMON hardware utilization counters (`GR %`, `FB %`, `VDEC %` from `0x10a600..0x10a610`) directly from `/sys/kernel/debug/dri/*/pstate` in a single `< 0.05 ms` file read with zero `/proc` scanning overhead.
 
-### 3. Per-Application Profile Overrides
+### 3. 120 Hz Display-Aware Idle Floor (Preventing `03` Underflow & Desktop Flashes)
+- [ ] **Automatic P8 (`07`) Floor When High-Pixel-Clock (120 Hz) Mode is Active**:
+  - **Problem**: `IDLE_STATE` currently defaults to `03` (`50 MHz` core / `135 MHz` `dispclk`), which violates the `396.36 MHz` pixel-clock requirement of the `1920x1080 @ 120 Hz` panel (`135 MHz < 396.36 MHz`, as enforced by `_nv002187kms` in `390.157`) and causes unnecessary `03` $\leftrightarrow$ `07` transitions on the desktop.
+  - **Solution**: Automatically detect when any active CRTC mode has `pixel_clock > 135,000 kHz` (or `refresh >= 100 Hz`) and clamp the idle floor to **`07` (`405 MHz` `dispclk`, `324 MHz` DDR3)**, dropping to `03` only when the display is running at 60 Hz or blanked (DPMS off).
+
+### 4. Multi-Tier Scaling Ladder (`03` $\leftrightarrow$ `07` $\leftrightarrow$ `0a` $\leftrightarrow$ `0f` $\leftrightarrow$ `10`) & Staged Hold-Down Timers
+- [ ] **5-Tier Governor State Machine with Anti-Flash Hold Timers**:
+  - **Problem**: Currently `idle_cycles >= 2` drops straight from `0f` (`900 MHz`) to `03` after just 2 seconds, and `nouveau-dynclockd` never utilizes P3 (`0a`) or OC (`10`).
+  - **Solution**:
+    - Scale across all 5 states based on hardware `GR`/`FB`/`VDEC` utilization:
+      - `03` (P12): Display off / 60 Hz deep idle (`GR < 5%`).
+      - `07` (P8): 120 Hz desktop idle / light 2D (`GR < 25%`).
+      - `0a` (P3): Video playback (`VDEC` active), WebGL, light 3D, or OBS compositing (`GR 25–60%`).
+      - `0f` (P0): Heavy 3D rendering / gaming (`GR > 60%`).
+      - `10` (OC): Sustained heavy 3D load (`GR > 85%` when `NvFermiOC=true` and `temp < 78 °C`).
+    - Implement staged hold-down timers (`5–8 s` hold in `10`/`0f` before stepping down to `0a`/`07`) matching `390.157` PowerMizer so brief game loading screens never trigger a mid-game memory reclock.
+
+### 5. Manual Override Coordination with `nouveau-ctrl` & `nouveau-tui`
+- [ ] **Shared Governor Mode State (`/run/nouveau-fermi-reclock/mode`)**:
+  - **Problem**: Running `nouveau-ctrl set 10` (or selecting a manual state in `nouveau-tui`) is currently overwritten by `nouveau-dynclockd` on the very next 1-second poll!
+  - **Solution**: Have `nouveau-ctrl` and `nouveau-tui` write `mode=locked:<pstate>` (or `mode=auto`) to `/run/nouveau-fermi-reclock/mode` and signal `nouveau-dynclockd`, so manual locks persist cleanly (while keeping thermal runaway protection active!) until the user switches back to `auto`.
+
+### 6. Event-Driven Workload & Power-Supply Detection
+- [ ] **Zero-Overhead eBPF / DRM & Udev Event Wakeups**:
+  - Replace polling loops with netlink/udev power-supply notifications and DRM client/pushbuffer tracepoints.
+
+### 7. Per-Application Profile Overrides
 - [ ] **Application Rules Directory (`/etc/nouveau-dynclockd.d/`)**:
-  - Allow users to define application-specific P-State policies:
-    - Gaming / Steam apps: lock to P0 / OC on launch.
-    - Media players (MPV, VLC, Firefox video playback): lock to P8 for smooth decoding without unnecessary thermal ramp.
-    - Compilers / productivity: keep in P12 idle state.
+  - Allow users to define application-specific P-State policies (e.g., Steam/Proton games $\to$ `0f`/`10`, MPV/VLC $\to$ `07`/`0a`, OBS Studio $\to$ `0a`/`0f`).
 
 ---
 
@@ -233,32 +284,33 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 
 ### 2. Real-Time ASCII Sparkline History
 - [ ] **60-Second Scrolling Metrics in `nouveau-tui` & `nouveau-ctrl watch`**:
-  - Render terminal ASCII sparklines (` ▂▃▄▅▆▇█`) tracking:
-    - Core & Memory clock history.
-    - GPU core temperature with thermal color coding (green < 60°C, yellow < 75°C, red ≥ 75°C).
-    - Fan RPM curve.
+  - Render terminal ASCII sparklines (` ▂▃▄▅▆▇█`) tracking Core/Memory clocks, hardware `GR`/`FB` load `%`, GPU temperature, and single-fan RPM (`dell-smm-hwmon`).
 
 ### 3. Instantaneous Power Dissipation Estimation ($P_{est}$)
 - [ ] **Real-Time Dynamic Power Calculation**:
-  - Model instantaneous power dissipation in Watts:
-    $$P_{est} = C_{eff} \cdot V^2 \cdot f + P_{leak}(T)$$
-  - Calibrated against Dell XPS L702X platform telemetry:
-    - P12 (`03`): ~4.2 W
-    - P8 (`07`): ~8.5 W
-    - P0 (`0f`): ~38.0 W
-    - OC (`10`): ~46.5 W
-  - Expose live wattage in `nouveau-ctrl status` and `nouveau-tui`.
+  - Model instantaneous power dissipation in Watts ($P_{est} = C_{eff} \cdot V^2 \cdot f + P_{leak}(T)$), calibrated against platform telemetry (`03`: ~4.2 W, `07`: ~8.5 W, `0a`: ~19.5 W, `0f`: ~38.0 W, `10`: ~46.5 W).
 
 ---
 
-## 🌐 Community & Ecosystem
+## 🚀 Project Evolution: `nouveau-reclocking-support` (Covering All Pre-`Nova` NVIDIA GPUs)
 
-- [ ] **Upstream nouveau Patchset Submission**:
-  - Organize clean RFC patch series for the Linux `dri-devel` mailing list:
-    1. eDP high-pixel-clock / 120Hz display timing calculation fix.
-    2. VMAP / voltage table fallback correction for Fermi mobile GPUs.
-    3. Resident Falcon microcode memory reclocking subsystem.
-- [ ] **Automated Telemetry Aggregation**:
-  - Build CI workflow to ingest and catalog user diagnostic submissions from `tools/nouveau-fermi-diag.py`.
-- [ ] **Mesa NVC0 / Zink Vulkan Validation**:
-  - Benchmark performance improvements in Mesa NVC0 Gallium driver and Zink (Vulkan-over-OpenGL) under full P0/OC clocks.
+Upstream Linux is developing the new Rust-based **`Nova`** kernel driver to replace `nouveau`—but **`Nova` exclusively supports Turing (`TU10x` / `NV160`, GeForce GTX 16xx / RTX 20xx) and newer GPUs** that contain a RISC-V **GSP (GPU System Processor)**.
+
+Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, Maxwell 2, Pascal, and Volta**) is permanently excluded from `Nova` and will rely on `nouveau` forever. As we expand beyond `GF106`, this project will evolve into **`nouveau-reclocking-support`** to provide complete dynamic reclocking, power management, and display fixes for the entire pre-`Nova` hardware ecosystem:
+
+| Generation | Chip Families | GeForce Series | Firmware Security | Current Upstream Nouveau Status | `nouveau-reclocking-support` Target Roadmap |
+|---|---|---|---|---|---|
+| **Fermi** (`NVC0`–`NVCE`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | Memory reclocking broken; no P3/OC; no governor | ✅ **Working on GF106!** Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips via `390.157` RE. |
+| **Kepler** (`NVE0`–`NV108`) | `GK104`–`GK208` | GeForce 600 / 700 / 800M | **Unsigned Falcon** | Manual debugfs only; mobile DDR3/GDDR5 bugs; no Boost; no governor | Add automatic governor support, GPU Boost 1.0/2.0 interpolation, mobile `GK107M`/`GK208M` RAM fixes, and `MSENC` (`NVENC`) via `390.157` / `470.xx` RE. |
+| **Maxwell 1** (`NV117`–`NV118`) | `GM107`–`GM108` | GTX 750 / 750 Ti, GTX 850M / 860M, 940M / MX110 / MX130 | **Unsigned Falcon!** | **No reclocking at all in upstream Nouveau!** | **High-Value Target**: First-gen Maxwell does **not** enforce signed PMU firmware and is fully supported in `390.157`! Port custom Falcon PMU + PLL/RAM reclocking to `GM107`/`GM108`. |
+| **Tesla** (`NV50`–`NVA8`) | `G80`–`GT218` | GeForce 8000 / 9000 / 200 / 300 | **Unsigned** | Partial/unstable `ramgt215` / `ramnv50`; no governor | Integrate `GT215`–`GT218` PDAEMON/host reclocking and dynamic governor support. |
+| **Maxwell 2 & Pascal** (`NV120`–`NV138`) | `GM200`–`GM206`, `GP100`–`GP108` | GeForce GTX 900 & GTX 10-series | **HS RSA-Signed ACR/PMU** | Locked to boot clocks (~135–405 MHz) due to missing signed PMU/ACR blobs | Investigate extracting/loading official signed PMU/ACR images from `390.157`/`470.xx`/ NVIDIA redistributables (or host-side PLL paths not blocked by `PRIV_LEVEL_MASK`) + unified governor. |
+
+### Packaging & Ecosystem Transition Tasks
+- [ ] **Rename / Provide Unified Package `nouveau-reclocking-support`**:
+  - Transition `nouveau-fermi-reclock-dkms` $\to$ `nouveau-reclocking-support-dkms` (and pre-built kernel packages) with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` once multi-architecture support lands.
+- [ ] **Upstream `nouveau` Patchset Submission**:
+  - Organize clean RFC patch series for the Linux `dri-devel` mailing list.
+- [ ] **Mesa `NVC0` Vulkan (`VULKAN.md`) & VA-API Compute Encoder Validation**:
+  - Prototype bound-descriptor Vulkan (`VULKAN.md`) and VA-API H.264 compute encoding on `NVC0` under full P0/OC clocks.
+
