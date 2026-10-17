@@ -1,6 +1,20 @@
-# Nouveau & NVIDIA Proprietary Driver Reclocking & Architecture Guide
+# Nouveau & NVIDIA Proprietary Driver Reclocking & Architecture Guide (`RECLOCKING_NOTES.md`)
 
-This document is the unified reference for GPU reclocking, performance optimization, and display architecture on the **Dell XPS L702X** laptop equipped with an **NVIDIA GeForce GT 555M** (Fermi / **GF106M**, Device ID `10de:0dcd`, 3072 MiB DDR3, 1920×1080 @ 120 Hz 3D panel).
+This document is the unified hardware, kernel, and reverse-engineering reference for GPU reclocking, performance optimization, and display architecture on the **Dell XPS L702X** laptop equipped with an **NVIDIA GeForce GT 555M** (Fermi / **GF106M**, Device ID `10de:0dcd`, 3072 MiB DDR3, 1920×1080 @ 120 Hz 3D panel) and sibling pre-`Nova` NVIDIA GPUs.
+
+---
+
+## Table of Contents
+1. [Hardware & System Specifications](#1-hardware--system-specifications)
+2. [Executive Summary & Component Status (`v2.1.0`)](#2-executive-summary--component-status-v210)
+3. [Nouveau Fermi Reclocking Architecture & Bug Fixes](#3-nouveau-fermi-reclocking-architecture--bug-fixes)
+4. [DDR3 Memory Reclocking Reverse Engineering (`mmiotrace` & Falcon Chronicles)](#4-ddr3-memory-reclocking-reverse-engineering-proprietary-trace)
+5. [Display Engine & 120 Hz Investigation](#5-display-engine--120-hz-investigation)
+6. [Performance Benchmark Summary](#6-performance-benchmark-summary)
+7. [Modified Driver Files Inventory](#7-modified-driver-files-inventory)
+8. [Resident Falcon Microcode Executor, S3 Recovery & PCIe Scaling (`v2.0.0`–`v2.1.0`)](#8-alternative-approaches-for-future-work)
+9. [Reverse Engineering Methodology & Multi-Architecture Scope (`390.157` via REA)](#9-reverse-engineering-the-nvidia-390157-proprietary-driver-via-rea-roadmap--research)
+10. [Concrete Reverse-Engineering Findings from `NVIDIA-Linux-x86_64-390.157` (`nv-modeset-kernel.o_binary` & `nv-kernel.o_binary`)](#10-concrete-reverse-engineering-findings-from-nvidia-390157-nv-modeset-kernelo_binary--nv-kernelo_binary)
 
 ---
 
@@ -8,34 +22,38 @@ This document is the unified reference for GPU reclocking, performance optimizat
 
 | Parameter | Value |
 |---|---|
-| **GPU** | GeForce GT 555M (Fermi GF106M, stepping A1) |
-| **Chipset ID** | `0x0c3680a1` (GF106, TSMC foundry) |
-| **VRAM Type** | **DDR3** (192-bit bus width, NOT GDDR5) |
+| **GPU** | GeForce GT 555M (Fermi GF106M, stepping A1, 144 CUDA Cores) |
+| **Chipset ID** | `0x0c3680a1` (GF106, TSMC 40nm) |
+| **VRAM Type** | **DDR3** (192-bit bus width, `43.2 GB/s` @ 900 MHz) |
 | **VRAM Size** | 3072 MiB |
 | **RAMCFG Strap** | `0x6` |
 | **Internal Panel** | 1920×1080 @ 120 Hz (eDP-1 / LGD `0x02c5`, 396.36 MHz pixel clock) |
-| **Active Kernel** | Linux CachyOS LTS (6.18+) |
+| **Active Kernel** | Linux CachyOS LTS (`6.18.55+`) |
 
-### VBIOS P-State Table (from BIT 'P' Table)
+### VBIOS & Synthetic P-State Table
 
-| State | Core Clock | Memory Clock | Effective Bandwidth | Voltage | Usage Profile |
-|---|---|---|---|---|---|
-| `03` | 50 MHz | 135 MHz | 270 MT/s | 820 mV | Low-Power Idle / Standby |
-| `07` (or `08`) | 202 MHz | 324 MHz | 648 MT/s | 820 mV | Standard 2D Desktop Idle |
-| `0f` | 590 MHz | 900 MHz | 1800 MT/s | 1030 mV | Full 3D Performance |
+| State | Core / Shader Clock | Memory Clock | Bandwidth | Voltage | PCIe Link | Usage Profile |
+|---|---|---|---|---|---|---|
+| `03` (P12) | 50 / 101 MHz | 135 MHz | 6.5 GB/s | 820 mV | Gen1 (`2.5 GT/s`) | Low-Power Idle / Standby |
+| `07` (P8) | 202 / 405 MHz | 324 MHz | 15.5 GB/s | 820 mV | Gen1 (`2.5 GT/s`) | Standard 2D Desktop Idle |
+| `0a` (P3, *Planned*) | 405 / 810 MHz | 650 MHz | 31.2 GB/s | 920 mV (`VID 0x03`) | Gen1 / Gen2 | Balanced 3D / Multimedia (Derived in §10.5–10.7) |
+| `0f` (P0) | 590 / 1180 MHz | 900 MHz | 43.2 GB/s | 1030 mV (`VID 0x01`) | Gen2 (`5.0 GT/s`) | Full 3D Performance (`339.8 GFLOPS`) |
+| `10` (OC, `NvFermiOC=1`) | **700 / 1400 MHz** | **900 MHz** | **43.2 GB/s** | **1030 mV** | **Gen2 (`5.0 GT/s`)** | **Verified Overclock (`403.2 GFLOPS`, +18.6% ALU)** |
 
 ---
 
-## 2. Executive Summary & Component Status
+## 2. Executive Summary & Component Status (`v2.1.0`)
 
 | Component | Status | Description / Solution |
 |---|---|---|
-| **Core / Shader Reclocking** | ✅ **Working** | Transitions to `590 MHz` core / `1180 MHz` shader cleanly via `nvkm_cstate_prog()`. |
-| **Memory Reclocking Loop Locks** | ✅ **Fixed** | Fixed PRIVRING bus faults (`0x10a580`) and PMU D-state timeout deadlocks. |
-| **DDR3 Memory Reclocking Path** | 🧪 **Testing (`NvFermiMemReclock=0` by default)** | Root cause found: PDAEMON I/O block is gated after Falcon reset; unlock sequence added to `gt215_pmu_init()`. Decoded proprietary DDR3 script runs via MEMX. See §4.5–4.6. |
-| **Dynamic Clock Daemon** | ✅ **Working** | `nouveau-dynclockd.py` scales pstates (`07` ↔ `0f`) automatically based on GPU load. |
-| **Backlight Control** | ✅ **Working** | ACPI EC hotkey driver (`dell-xps-brightness-dkms`) and hardware backlight sync. |
-| **Fan RPM Reading** | ✅ **Working** | `dell_smm_hwmon` configured with `fan_mult=1` in `/etc/modprobe.d/dell-smm-hwmon.conf`. |
+| **Core / Shader / Voltage Reclocking** | ✅ **Working** | Transitions `03` ↔ `07` ↔ `0f` ↔ `10` cleanly via `nvkm_cstate_prog()` with factory `1.030 V` regulation. |
+| **Bidirectional DDR3 Memory Reclocking (`324` ↔ `900 MHz`)** | ✅ **Working (`v2.0.0+`)** | Custom resident Falcon microcode executor (`memx_exec_custom.fuc`) + hardware PHY latch (`0x001548 = 0x80000101`) + PMU clock domain protection (`0x0c`). See §8.3. |
+| **S3 Suspend/Resume Recovery** | ✅ **Working (`v2.0.1+`)** | Hardware signature check (`SCRATCH0 == 0xE1EC0001`) detects cleared Falcon IMEM on wake and self-heals via cold bootstrap without timeout. See §8.4. |
+| **Dynamic PCIe Gen1 ↔ Gen2 Scaling** | ✅ **Working (`v2.0.1+`)** | Automatically scales between PCIe Gen1 (`2.5 GT/s x16`) in `03`/`07` and Gen2 (`5.0 GT/s x16`, `8.0 GB/s`) in `0f`/`10`. See §8.4. |
+| **Live TTM VRAM Telemetry & Battery Cap** | ✅ **Working (`v2.1.0+`)** | Exact TTM `VRAM:` readout in debugfs + `/run/nouveau-fermi-reclock/vram` snapshot and `BATTERY_CAP` AC/DC profile awareness. |
+| **Zero-Flash VBlank Memory Reclocking** | 📋 **Root Cause Solved (§10.4)** | Host-side `gf100_ram_wait_vblank()` landed in `v2.1.0`; full zero-flash requires moving `WAIT_VBLANK` inside `memx_exec_custom.fuc` + `ISOHUB` watermark boost (`_nv031916rm`). |
+| **Dynamic Clock Daemon (`nouveau-dynclockd`)** | ✅ **Working** | Automatically scales P-states (`03`/`07` ↔ `0f`) with thermal protection (`80 °C`) and battery cap. |
+| **Backlight & Fan RPM Telemetry** | ✅ **Working** | ACPI EC hotkey driver (`dell-xps-brightness-dkms`) and `dell_smm_hwmon` RPM monitoring in `nouveau-ctrl` / `nouveau-tui`. |
 
 ---
 
@@ -828,24 +846,21 @@ downclocking impossible.
    - `gf100_ram_exec_custom()` now validates hardware state on every transition: if `SCRATCH2 != 0xE1EC0001` (or if a fast-path trigger times out), it clears `fexec_loaded` and transparently falls back to a full cold bootstrap (PMC bit-13 reset, scrub wait, PDAEMON I/O unlock, IMEM/DMEM upload, and `START`), restoring full bidirectional DDR3 reclocking after resume.
 2. **Cold-Boot Clock Desync Fix**:
    - Synchronized hardware clock readout on initial module load so the kernel's cached P-state and clock domains accurately reflect VBIOS boot state before the first manual or daemon-driven transition.
-3. **Dynamic PCIe Gen1 / Gen2 Link Speed Synchronization**:
-   - Integrated PCIe link speed switching (`2.5 GT/s` Gen1 in low-power states `03`/`07` $\leftrightarrow$ `5.0 GT/s` Gen2 in performance states `0f`/`10`) into the P-state transition path.
+3. **Dynamic PCIe Gen1 / Gen2 Link Speed Synchronization (`0x02241c` / `0x088460` / `0x088088`)**:
+   - Integrated PCIe link speed switching (`2.5 GT/s` Gen1 in low-power states `03`/`07` ↔ `5.0 GT/s` Gen2 in performance states `0f`/`10`) into the P-state transition path:
+     - **PUNIT Capability Register (`0x02241c`)**: Bit 0 (`0x01` = Gen2 2.0 spec version via `gf100_pcie_set_version()`), Bit 7 (`0x80` = advertise `5.0 GT/s` via `gf100_pcie_set_cap_speed()`).
+     - **NVIDIA Extended Config `0x460` (MMIO `0x088460`)**: Bits `[5:4]` target link speed (`0x10` = `2.5 GT/s`, `0x20` = `5.0 GT/s`), Bit 0 (`0x01`) `LINK_RETRAIN` trigger (`g84_pcie_set_link_speed()`).
+     - **PCIe Link Status `0x88` (MMIO `0x088088`, `PCI_EXP_LNKSTA`)**: Bits `[19:16]` negotiated speed (`0x10000` = `2.5 GT/s`, `0x20000` = `5.0 GT/s`), Bit 11 (`0x0800`) retraining in flight.
 
-### 8.5 Synthetic Intermediate Performance State (P3 / State `0a` Research)
-
-- **Target Operating Point**:
-  - **Assigned P-State ID**: `0a` (PowerMizer **P3** — Balanced 3D / Multimedia / Video Playback), positioned between `07` (P8: 202/405/324 MHz @ 0.820 V) and `0f` (P0: 590/1180/900 MHz @ 1.030 V).
-  - **Core / Shader Clocks**: `405 MHz` core / `810 MHz` shader (strict 2× Fermi hot-clock multiplier).
-  - **Memory Clock**: `648 MHz` DDR3 (1296 MT/s effective, ~31.1 GB/s bandwidth across the 192-bit bus).
-  - **Voltage Rail**: `0.920 V` (activates the unmapped hardware VID step `0x03` on the GPU voltage regulator, bridging 0.820 V and 1.030 V at ~18–22 W).
-- **Key Engineering Dependency**:
-  - The Dell XPS L702X VBIOS only defines discrete DDR3 timing and PHY entries for `135 MHz`, `324 MHz`, and `900 MHz`. Safely training `648 MHz` requires either reverse-engineering the proprietary driver's dynamic JEDEC/PHY timing interpolation algorithm or deriving a verified 648 MHz register table (see §9.4 below).
+### 8.5 Synthetic Intermediate Performance State (P3 / State `0a`)
+- **Target Operating Point**: `0a` (`405 MHz` Core / `810 MHz` Shader / `650 MHz` DDR3 @ `0.920 V`, `VID 0x03`, `~31.2 GB/s`).
+- **Solved in §10.5–§10.7**: Decompilation of `_nv010738rm` (`0x132004 = 0x10012702`) and `_nv014883rm` (`405 MHz` / `500 MHz` strap thresholds) proved that `650 MHz` uses the exact `900 MHz` VBIOS strap timing/PHY table with only `0x132004` changed from `0x10013602` to `0x10012702`.
 
 ---
 
-## 9. Reverse Engineering the NVIDIA 390.157 Proprietary Driver via REA (Roadmap & Research)
+## 9. Reverse Engineering the NVIDIA 390.157 Proprietary Driver via REA (Methodology & Scope)
 
-The NVIDIA `390.157` legacy driver is the final official proprietary release supporting Fermi (`GF10x`/`GF11x`) alongside Kepler (`GK10x`/`GK11x`/`GK208`), Maxwell (`GM10x`/`GM20x`), and early Pascal (`GP10x`). Using the **REA (Reverse Engineer Anything)** MCP server together with a native decompiler backend (**Ghidra** headless/GUI) and `envytools` (`envydis`), we can systematically extract hardware programming sequences from `390.157` to improve Nouveau across all supported pre-signed-firmware architectures.
+The NVIDIA `390.157` legacy driver is the final official proprietary release supporting Fermi (`GF10x`/`GF11x`) alongside Kepler (`GK10x`/`GK11x`/`GK208`), Maxwell (`GM10x`/`GM20x`), and early Pascal (`GP10x`). Using the **REA (Reverse Engineer Anything)** MCP server together with **Ghidra** and `envytools` (`envydis`), we systematically extract hardware programming sequences from `390.157` to improve Nouveau across all pre-signed-firmware architectures.
 
 ### 9.1 Clean-Room Methodology & Boundaries
 
@@ -860,82 +875,22 @@ The NVIDIA `390.157` legacy driver is the final official proprietary release sup
 
 | Artifact | Internal Role | Value for Nouveau |
 |---|---|---|
-| `kernel/nvidia/nv-kernel.o_binary` | Core **Resource Manager (RM)**: contains the per-chip HAL (`_nv0xxxxxrm` dispatch tables), VBIOS BIT/P/M/T table parsers, PLL calculators, DDR3/GDDR5 training generators, PMU task managers, ELPG/BLCG/SLCG power-gating tables, voltage/VID mappers, and thermal/fan controllers. | ⭐⭐⭐ Primary RE target |
-| Embedded Falcon Ucode Arrays (inside `nv-kernel.o_binary`) | Compiled Falcon `fuc3`/`fuc4`/`fuc5` bytecode images for PMU (`0x10a000`), FECS (`0x409000`), and GPCCS (`0x41a000`) per chip family. | ⭐⭐⭐ Reveals exact PMU command/queue protocols and hardware workarounds |
-| `kernel/nvidia-modeset/nv-modeset-kernel.o_binary` | Proprietary modesetting core (EVO / NVDisplay): head timing validation, DisplayPort/eDP link training, VBlank timestamping, and minimum `dispclk`/hub clock constraints. | ⭐⭐ Key to solving 120 Hz eDP compositor frame-pacing & display clock locking |
-| `kernel/nvidia/*.c` (open glue layer) | Unobfuscated GPL kernel interface layer (`nv.c`, `nv-modeset-interface.c`, `os-interface.c`). | ⭐⭐ Provides human-readable entry points, string references, and struct layouts calling into `nv-kernel.o_binary` |
-| `libnvidia-ml.so.390.157` & `nvidia-smi` | Management library querying RM control calls (`NV2080_CTRL_CMD_PERF_*`, `CLK_*`, `THERMAL_*`, `FB_*`). | ⭐ Maps RM control call IDs to internal HAL functions |
+| `kernel/nvidia/nv-kernel.o_binary` | Core **Resource Manager (RM)**: per-chip HAL (`_nv0xxxxxrm`), VBIOS BIT/P/M/T parsers, PLL calculators, DDR3/GDDR5 training generators, `OBJSEQ` sequencer, PMU task managers, BLCG/SLCG tables, and voltage/thermal controllers. | ⭐⭐⭐ Primary RE target |
+| Embedded Falcon Ucode Arrays (inside `nv-kernel.o_binary`) | Compiled Falcon `fuc3`/`fuc4`/`fuc5` bytecode images for PMU (`0x10a000`), FECS (`0x409000`), GPCCS (`0x41a000`), and `MSENC` (`0x1c8000`). | ⭐⭐⭐ Reveals PMU command protocols & video firmware |
+| `kernel/nvidia-modeset/nv-modeset-kernel.o_binary` | Proprietary modesetting core (EVO / NVDisplay): head timing validation, DisplayPort/eDP link training, BPC step-down, and IMP bandwidth checks. | ⭐⭐ Solved 120 Hz eDP 6 bpc step-down & stereo quirks (§10.2) |
+| `kernel/nvidia/*.c` (open glue layer) | Unobfuscated GPL kernel interface layer (`nv.c`, `nv-modeset-interface.c`, `os-interface.c`). | ⭐⭐ Human-readable entry points & struct layouts |
 
-### 9.3 Phase 0: Environment Setup, Triage & Symbol Recovery
+### 9.3 Phase 1–5 Research Matrix & Cross-Reference to Solved Findings
 
-1. **Workspace Isolation**:
-   - Extract `NVIDIA-Linux-x86_64-390.157.run --extract-only` into an isolated analysis directory outside all git repositories (e.g., `~/RE/nvidia-390.157/`).
-2. **REA + Ghidra Session Initialization**:
-   - Open `nv-kernel.o_binary` via REA (`open_binary`, `binary_overview`, `inspect_binary_layout`).
-   - Export the baseline session ledger with `export_evidence_bundle` so subsequent passes reuse the analyzed database without re-indexing.
-3. **Locating the RM HAL Dispatch Tables & Control Call Handlers**:
-   - In NVIDIA's RM, external `rm_ioctl` calls dispatch through `NV0080`/`NV2080` control IDs (documented in open-source `open-gpu-kernel-modules` headers for later drivers, whose `NV2080_CTRL_CMD_*` constants largely match 390.xx).
-   - Use REA `search_bytes` / `search_strings` and `xrefs` on debug assertion strings, VBIOS table signatures, and MMIO base offsets (`0x0010a000`, `0x0010f000`, `0x00132000`, `0x00137000`) to map obfuscated `_nv0xxxxxrm` symbols to concrete subsystems (`clk`, `fb`, `pmu`, `volt`, `therm`, `lpwr`, `disp`).
-4. **Carving Embedded Falcon Microcode**:
-   - Locate Falcon code/data descriptors inside `.rodata` of `nv-kernel.o_binary`, extract the GF100/GF106 PMU image, and disassemble with `envydis -m falcon -V fuc3` to compare against Nouveau's `gf100.fuc3` and our `memx_exec_custom.fuc`.
-
-### 9.4 Phase 1: Fermi (`GF10x` / `GF11x`) Deep-Dive Enhancements
-
-#### 1. Arbitrary-Frequency DDR3 Timing & PHY Calculation (Unlocks Synthetic P3 `0a` @ 648 MHz)
-- **Question**: How does RM compute `0x10f290–0x10f2a0` (JEDEC timings), `0x10f300–0x10f324` (DDR3 MR0/MR1/MR2 CAS & write leveling), `0x10f440–0x10f468` (impedance/strobe), `0x10f808–0x10f824` (PHY DLL divider), and `0x132004` (MEMPLL $M, N, P$) when transitioning to an intermediate clock, or how does it interpolate between VBIOS strap entries?
-- **Method**: Trace xrefs to `0x0010f290`, `0x0010f824`, and `0x00132004` in `nv-kernel.o_binary` (`analyze_function`, `procedure_pseudo_code`, `trace_native_values`).
-- **Deliverable**: Exact mathematical formulas for `648 MHz` DDR3 on strap `0x6`, enabling safe activation of P-State `0a` (`405/810/648 MHz @ 0.920 V`).
-
-#### 2. Native RM PMU Protocol & Channel Context Initialization
-- **Question**: How does RM initialize the PDAEMON channel context (`0x10a47c` / `0x10a050`) in system RAM/VRAM so that Falcon-side `RGET`/`PUT` queue reads never trigger `PRIVRING` faults, and what exact MEMX opcodes (`0x34`, `0x3a`) does its PMU firmware execute?
-- **Method**: Decompile the RM関数 that emits the unlock sequence (`0x10a048`, `0x10a090`, `0x10a47c`, `0x10a058`, `0x10a600..0x10a610`) identified in §4.6, and inspect the carved GF106 PMU Falcon firmware handlers for opcodes `0x34` and `0x3a`.
-- **Deliverable**: Complete specification of the Fermi PDAEMON context block and mysterious opcodes `0x34`/`0x3a`.
-
-#### 3. Hardware GPU Load Counters (`PMU` Idle/Busy Sampling)
-- **Question**: Which `0x10a5xx` / `0x10a7xx` PDAEMON counter registers and signal masks does RM configure to measure true GR/FB/PCIE engine busy percentage?
-- **Method**: Trace `NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES` / `nvidia-smi` utilization queries in `nv-kernel.o_binary`.
-- **Deliverable**: Accurate hardware utilization telemetry exposed via sysfs/debugfs for `nouveau-dynclockd` and `nouveau-tui` (and optional in-kernel autonomous governor scaling).
-
-#### 4. BLCG / SLCG Clock-Gating & ELPG Power-Gating Tables
-- **Question**: What per-engine Block-Level Clock Gating (BLCG), Second-Level Clock Gating (SLCG), and Engine-Level Power Gating (ELPG) register/value arrays does RM program on `GF100`/`GF104`/`GF106`/`GF108`/`GF110`/`GF114`/`GF116`/`GF117`/`GF119`?
-- **Method**: Locate the static chip-indexed register initialization tables in `.rodata` referenced by the RM power-management (`lpwr`/`cg`) init routines.
-- **Deliverable**: Drop-in static clock-gating tables for Fermi chips in Nouveau (`nvkm/subdev/therm/` or `gr/gf100.c`), cutting idle and light-2D power consumption and heat.
-
-#### 5. Voltage Regulation (VID `0x03` / `0.920 V`) & Thermal/Fan Protection
-- **Question**: How does RM parse the VBIOS Voltage Table and GPIO VID bitmask on GF106, and what hardware thermal slowdown registers (`0x00020xxx`) does it program to auto-throttle clocks if temperatures spike?
-- **Method**: Trace xrefs to the thermal/GPIO block (`0x0000d6xx`, `0x000200xx`) and VBIOS BIT `'P'` / `'V'` parsers.
-- **Deliverable**: Verified `0.920 V` VID `0x03` mapping for P3 (`0a`), safe undervolt support, and hardware-enforced thermal clock throttling during state `10` overclocking.
-
-#### 6. Display Engine (`nv-modeset-kernel.o_binary`): 120 Hz eDP & Hub Clocks
-- **Question**: How does `nv-modeset-kernel.o_binary` program vblank interrupts, raster timestamps, and iso/display hub clocks (`hubk01`/`hubk06`/`hubk07`) on Fermi for high-pixel-clock (396.36 MHz) 120 Hz eDP panels?
-- **Method**: Open `nv-modeset-kernel.o_binary` in REA, trace `0x0061xxxx` (PDISP) register writes and vblank handler paths.
-- **Deliverable**: Eliminate the VSync compositor frame-pacing bottleneck (~57 FPS $\to$ 120 FPS) and establish the exact safe minimum display hub clock formula.
-
-### 9.5 Phase 2: Kepler (`GK10x` / `GK11x` / `GK208`) Enhancements
-- **GDDR5 & DDR3 Edge Cases**: Cross-compare RM's Kepler memory reclocking builder against `ramgk104.c` to fix known stability regressions on mobile Kepler (`GK107M`, `GK208M`) and mixed DDR3/GDDR5 boards.
-- **GPU Boost 1.0 / 2.0 & Power Capping**: Document RM's base-to-boost clock interpolation, TDP power-capping sensors, and voltage-frequency curve tables.
-- **Kepler BLCG/SLCG/ELPG**: Extract missing clock-gating tables for Kepler variants not currently covered in upstream Nouveau.
-
-### 9.6 Phase 3: Maxwell 1 (`GM107` / `GM108`) Unlocks
-- Because first-generation Maxwell (`GM107`/`GM108`, e.g., GTX 750 Ti, GTX 850M/860M, GeForce 940M) **does not enforce signed PMU firmware**, it is the newest NVIDIA architecture where full open-source reclocking can be achieved without external signed blobs.
-- Extract RM's `GM107` PLL, GPC/XBAR/LTC/DRAM clock programming, and DDR3/GDDR5 training sequences from `390.157` to bring full dynamic reclocking to Maxwell 1.
-
-### 9.7 Phase 4: Maxwell 2 (`GM20x`) & Pascal (`GP10x`) — Documentation Scope
-- Document RM's P-state tables, thermal curves, and ACR (Access Control Region) secure-boot handoff for reference, while explicitly keeping custom PMU reclocking out of scope due to hardware RSA signature enforcement.
-
-### 9.8 Phase 5: Universal Chip Profile Database & Static↔Runtime Correlation
-- **Static↔Runtime Reconciliation**: Pair every static REA finding (`Evidence ID`, function address, decompiled register formula) with `mmiotrace` + `demmio` captures from real hardware.
-- **Data-Driven Chip Profiles (`TODO.md` §3)**: Consolidate extracted per-chip timings, clock-gating tables, voltage mappings, and display constraints into structured per-chip profile tables so support scales cleanly across the entire Fermi (`NV_C0`–`NV_CE`), Kepler (`NV_E0`–`NV_F0`), and Maxwell 1 (`NV_117`–`NV_118`) families.
-
-### 9.9 Priority Execution Checklist (Once Ghidra & 390.157 Are Ready)
-
-1. [x] **Verify REA + Ghidra Backend**: Run `binary_session` in REA to confirm Ghidra 12.1.2 headless/provider availability.
-2. [x] **Unpack `390.157` in Isolated Workspace**: Extract `NVIDIA-Linux-x86_64-390.157.run` (`binary_driver/` added to `.gitignore`).
-3. [x] **Baseline Triage of `nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`**: Index strings/xrefs for `0x10a000` (PDAEMON), `0x10f000` (PFB/DRAM), `0x132000` (MEMPLL), and NVKMS mode validation.
-4. [ ] **Carve & Disassemble GF106 PMU Ucode**: Extract the embedded Fermi PMU Falcon image, disassemble via `envydis`, and decode opcodes `0x34` / `0x3a` and channel init.
-5. [x] **Decompile DDR3 Timing & MEMPLL Calculators**: Extract the VBIOS-to-register DDR3 timing/MR/PHY and `0x132004` MEMPLL derivation for P-State `0a` (P3 @ 648 MHz).
-6. [ ] **Extract Fermi BLCG/SLCG Tables**: Pull static clock-gating register arrays for GF106 and sibling Fermi chips.
-7. [x] **Analyze `nv-modeset-kernel.o_binary`**: Inspect 120 Hz eDP head timing, 3D Vision EDID quirks, DP BPC step-down, and ISO bandwidth checks.
+| Phase / Topic | Status | Where Documented / Next Action |
+|---|---|---|
+| **120 Hz 3D Vision eDP, `+5 MHz` Grace & `8 bpc → 6 bpc` Step-Down** | ✅ **Solved** | See **§10.2** (`_nv000659kms`, `_nv002219kms`, `_nv002187kms`) |
+| **Fermi PDAEMON Context-Switch State Machine (`0x10a128` ↔ `0x10a058`)** | ✅ **Solved** | See **§10.3** (`_nv029783rm`, `_nv029647rm`) |
+| **`OBJSEQ` Bytecode VM, Opcode `0x3a` & Zero-Flash `ISOHUB` + `WAIT_VBLANK`** | ✅ **Solved** | See **§10.4** (`_nv031916rm`, `_nv031754rm`, `_nv031860rm`) |
+| **`0x132004` (`MEMPLL_COEFF`) & Synthetic P3 (`0a` @ `650 MHz` = `0x10012702`)** | ✅ **Solved** | See **§10.5–§10.7** (`_nv010738rm`, `_nv014883rm`, `_nv014880rm`) |
+| **PDAEMON Hardware Load Counters (`0x10a600..0x10a610`) & PowerMizer** | ✅ **Identified** | See **§10.3 & §10.8** (`_nv029625rm` / `_nv029628rm`); mask extraction tracked in `TODO.md` §6 |
+| **Fermi BLCG / SLCG Clock-Gating `.rodata` Tables** | 📋 **Pending Extraction** | Tracked in `TODO.md` §6 |
+| **Kepler (`GK104`–`GK208`) & Maxwell 1 (`GM107`–`GM108`) Reclocking** | 📋 **Planned (`Phase 2–3`)** | Tracked in `TODO.md` (Pre-`Nova` Evolution) |
 
 ---
 
