@@ -290,6 +290,19 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 - [ ] **Real-Time Dynamic Power Calculation**:
   - Model instantaneous power dissipation in Watts ($P_{est} = C_{eff} \cdot V^2 \cdot f + P_{leak}(T)$), calibrated against platform telemetry (`03`: ~4.2 W, `07`: ~8.5 W, `0a`: ~19.5 W, `0f`: ~38.0 W, `10`: ~46.5 W).
 
+### 4. Standard Linux DRM `fdinfo` & `sysfs` Telemetry (`nvtop` / `btop` / `MangoHud` Support)
+- [ ] **Standard DRM `drm_show_fdinfo` (`drm-memory-vram`, `drm-engine-gfx`, `drm-engine-dec`, `drm-engine-dma`)**:
+  - **Why**: Modern Linux monitoring tools (`nvtop`, `btop`, `MangoHud`, `Mission Center`, KDE System Monitor) read `/proc/<pid>/fdinfo/<drm-fd>` to display per-application GPU engine load `%` and per-application VRAM consumption. Upstream `nouveau` lacks `fdinfo` engine/VRAM reporting on Fermi/Kepler/Maxwell.
+  - **Implementation**: Wire `drm_driver.show_fdinfo` in `nouveau_drm.c` to export per-client TTM buffer residency (`drm-memory-vram`, `drm-memory-gtt`) and per-channel fence execution time (`drm-engine-gfx`, `drm-engine-dec`, `drm-engine-dma`).
+- [ ] **Standard Unprivileged `sysfs` Attributes (`gpu_busy_percent`, `mem_info_vram_used`, `mem_info_vram_total`)**:
+  - Expose standard DRM `sysfs` nodes under `/sys/class/drm/card*/device/` (matching `amdgpu` / `xe` conventions) backed by our PDAEMON `0x10a600` hardware load counters and TTM VRAM manager so `nouveau-ctrl`, `nouveau-tui`, `btop`, and `fastfetch` can read live GPU load and VRAM **without root privileges or debugfs snapshots**.
+
+### 5. Modern DRM / KMS / DRI3 / Wayland Display & Sync APIs (`dispnv50` / `nvc0`)
+- [ ] **Wayland Explicit Sync (`linux-drm-syncobj-v1` / DRI3 `drm_syncobj`) & `VM_BIND` / `EXEC` Validation**:
+  - Ensure `nouveau_exec` / `drm_syncobj` timeline and binary fences work seamlessly with `nvc0` Gallium (`EGL_ANDROID_native_fence_sync` / `linux-drm-syncobj-v1`), eliminating Wayland/Xwayland frame-pacing stutter on 120 Hz panels.
+- [ ] **Atomic KMS Async Page-Flip (`DRM_MODE_PAGE_FLIP_ASYNC`) on `dispnv50` (`GF100`/`GF106` EVO)**:
+  - Audit and enable atomic async page-flips on Fermi EVO display channels (`wndw.c` / `head.c`) to allow low-latency unthrottled frame presentation above 120 FPS in games and benchmarks.
+
 ---
 
 ## 🚀 Project Evolution: `nouveau-reclocking-dkms` (Covering All Pre-`Nova` NVIDIA GPUs)
@@ -306,12 +319,25 @@ Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, 
 | **Tesla** (`NV50`–`NVA8`) | `G80`–`GT218` | GeForce 8000 / 9000 / 200 / 300 | **Unsigned** | Partial/unstable `ramgt215` / `ramnv50`; no governor | Integrate `GT215`–`GT218` PDAEMON/host reclocking and dynamic governor support. |
 | **Maxwell 2 & Pascal** (`NV120`–`NV138`) | `GM200`–`GM206`, `GP100`–`GP108` | GeForce GTX 900 & GTX 10-series | **HS RSA-Signed ACR/PMU** | Locked to boot clocks (~135–405 MHz) due to missing signed PMU/ACR blobs | Investigate extracting/loading official signed PMU/ACR images from `390.157`/`470.xx`/ NVIDIA redistributables (or host-side PLL paths not blocked by `PRIV_LEVEL_MASK`) + unified governor. |
 
-### Packaging & Ecosystem Transition Tasks
+### Out-of-Tree Maintenance, Kernel Rebasing Strategy & CI Test Matrix
+- [ ] **Kernel `6.18.55+` DRM Client API Rebase & Multi-Kernel Compatibility Shims (`nouveau_compat.h`)**:
+  - **Context**: Because upstream `nouveau` is in maintenance mode for pre-Turing GPUs, we maintain this driver independently out-of-tree and rebase against upstream DRM core API changes as new kernels release.
+  - **Immediate Rebase (`6.18.55+` — [`NOTE_2026-10-04_kernel-6.18.55-rebase.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/NOTE_2026-10-04_kernel-6.18.55-rebase.md))**: Update `nouveau_display.c:767,798` (`drm_client_dev_suspend(dev)` and `drm_client_dev_resume(dev)` 1-argument signature introduced in `6.18.53–6.18.55`) using `LINUX_VERSION_CODE` compatibility wrappers so the same source tree compiles cleanly across older `6.12`/`6.18.x` LTS and `6.18.55+` / `6.19+` mainline kernels simultaneously.
+- [ ] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
+  - Build an automated CI matrix workflow triggered on every push, PR, and weekly schedule that:
+    1. Applies `nouveau-fermi-reclock.patch` to `nouveau-source.tar.gz` (`--dry-run` + full patch check).
+    2. Compiles `nouveau.ko` via `Kbuild` / `dkms` against a matrix of kernel headers:
+       - `linux-cachyos-lts` (target for `aliveos-repo`)
+       - `linux-cachyos` (latest stable/mainline CachyOS)
+       - Arch Linux `linux` & `linux-lts`
+    3. Runs `shellcheck` / `python3 -m py_compile` on `nouveau-dynclockd.py`, `nouveau-ctrl`, and `nouveau-tui`.
+    4. Alerts immediately if a newly released kernel header breaks compilation—catching DRM API shifts *before* `aliveos-repo` package builds run.
 - [ ] **Rename / Provide Unified Package `nouveau-reclocking-dkms`**:
   - Transition `nouveau-fermi-reclock-dkms` $\to$ `nouveau-reclocking-dkms` (and pre-built kernel packages `nouveau-reclocking-*`) with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` once multi-architecture support lands.
 - [ ] **Mesa `NVC0` Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) & VA-API Compute Encoder Validation**:
   - Prototype bound-descriptor Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) and VA-API H.264 compute encoding on `NVC0` under full P0/OC clocks.
 - [ ] **OpenCL 3.0 (`Rusticl`), Unified Memory AI Inference & `PCOPY` VRAM-as-RAM Block Device ([`VRAM_AI.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VRAM_AI.md))**:
   - Unlock full `~2.75 GiB` OpenCL tensor allocations on `nvc0`, transparent `VRAM | GART` oversubscription for `> 3 GiB` LLMs, and `/dev/nvram0` `PCOPY` DMA-backed upper-VRAM system memory/swap pooling as detailed in [`VRAM_AI.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VRAM_AI.md).
+
 
 
