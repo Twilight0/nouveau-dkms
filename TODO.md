@@ -292,13 +292,13 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
 
 ---
 
-## 🚀 Project Evolution: `nouveau-reclocking-support` (Covering All Pre-`Nova` NVIDIA GPUs)
+## 🚀 Project Evolution: `nouveau-reclocking-dkms` (Covering All Pre-`Nova` NVIDIA GPUs)
 
 Upstream Linux is developing the new Rust-based **`Nova`** kernel driver to replace `nouveau`—but **`Nova` exclusively supports Turing (`TU10x` / `NV160`, GeForce GTX 16xx / RTX 20xx) and newer GPUs** that contain a RISC-V **GSP (GPU System Processor)**.
 
-Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, Maxwell 2, Pascal, and Volta**) is permanently excluded from `Nova` and will rely on `nouveau` forever. As we expand beyond `GF106`, this project will evolve into **`nouveau-reclocking-support`** to provide complete dynamic reclocking, power management, and display fixes for the entire pre-`Nova` hardware ecosystem:
+Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, Maxwell 2, Pascal, and Volta**) is permanently excluded from `Nova` and will rely on `nouveau` forever. As we expand beyond `GF106`, this project will evolve into **`nouveau-reclocking-dkms`** to provide complete dynamic reclocking, power management, and display fixes for the entire pre-`Nova` hardware ecosystem:
 
-| Generation | Chip Families | GeForce Series | Firmware Security | Current Upstream Nouveau Status | `nouveau-reclocking-support` Target Roadmap |
+| Generation | Chip Families | GeForce Series | Firmware Security | Current Upstream Nouveau Status | `nouveau-reclocking-dkms` Target Roadmap |
 |---|---|---|---|---|---|
 | **Fermi** (`NVC0`–`NVCE`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | Memory reclocking broken; no P3/OC; no governor | ✅ **Working on GF106!** Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips via `390.157` RE. |
 | **Kepler** (`NVE0`–`NV108`) | `GK104`–`GK208` | GeForce 600 / 700 / 800M | **Unsigned Falcon** | Manual debugfs only; mobile DDR3/GDDR5 bugs; no Boost; no governor | Add automatic governor support, GPU Boost 1.0/2.0 interpolation, mobile `GK107M`/`GK208M` RAM fixes, and `MSENC` (`NVENC`) via `390.157` / `470.xx` RE. |
@@ -307,8 +307,8 @@ Every single pre-Turing NVIDIA architecture (**Tesla, Fermi, Kepler, Maxwell 1, 
 | **Maxwell 2 & Pascal** (`NV120`–`NV138`) | `GM200`–`GM206`, `GP100`–`GP108` | GeForce GTX 900 & GTX 10-series | **HS RSA-Signed ACR/PMU** | Locked to boot clocks (~135–405 MHz) due to missing signed PMU/ACR blobs | Investigate extracting/loading official signed PMU/ACR images from `390.157`/`470.xx`/ NVIDIA redistributables (or host-side PLL paths not blocked by `PRIV_LEVEL_MASK`) + unified governor. |
 
 ### Packaging & Ecosystem Transition Tasks
-- [ ] **Rename / Provide Unified Package `nouveau-reclocking-support`**:
-  - Transition `nouveau-fermi-reclock-dkms` $\to$ `nouveau-reclocking-support-dkms` (and pre-built kernel packages) with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` once multi-architecture support lands.
+- [ ] **Rename / Provide Unified Package `nouveau-reclocking-dkms`**:
+  - Transition `nouveau-fermi-reclock-dkms` $\to$ `nouveau-reclocking-dkms` (and pre-built kernel packages `nouveau-reclocking-*`) with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` once multi-architecture support lands.
 - [ ] **Upstream `nouveau` Patchset Submission**:
   - Organize clean RFC patch series for the Linux `dri-devel` mailing list.
 - [ ] **Mesa `NVC0` Vulkan ([`VULKAN.md`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/VULKAN.md)) & VA-API Compute Encoder Validation**:
