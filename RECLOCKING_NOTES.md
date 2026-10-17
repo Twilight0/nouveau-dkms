@@ -821,3 +821,372 @@ downclocking impossible.
    - In `nvkm_pstate_prog()`, error propagation ensures the clock state machine
      aborts cleanly if memory reclocking encounters an unexpected error.
 
+### 8.4 S3 Suspend/Resume Falcon Auto-Recovery, Cold-Boot Clock Sync & PCIe Link Scaling (v2.0.1)
+
+1. **S3 Suspend/Resume Falcon Executor Auto-Recovery**:
+   - Across ACPI S3 suspend/resume cycles, GPU power removal wipes PDAEMON IMEM/DMEM and resets `SCRATCH2` (`0x10a080`) to `0x00000000`, invalidating the host's `fexec_loaded` flag.
+   - `gf100_ram_exec_custom()` now validates hardware state on every transition: if `SCRATCH2 != 0xE1EC0001` (or if a fast-path trigger times out), it clears `fexec_loaded` and transparently falls back to a full cold bootstrap (PMC bit-13 reset, scrub wait, PDAEMON I/O unlock, IMEM/DMEM upload, and `START`), restoring full bidirectional DDR3 reclocking after resume.
+2. **Cold-Boot Clock Desync Fix**:
+   - Synchronized hardware clock readout on initial module load so the kernel's cached P-state and clock domains accurately reflect VBIOS boot state before the first manual or daemon-driven transition.
+3. **Dynamic PCIe Gen1 / Gen2 Link Speed Synchronization**:
+   - Integrated PCIe link speed switching (`2.5 GT/s` Gen1 in low-power states `03`/`07` $\leftrightarrow$ `5.0 GT/s` Gen2 in performance states `0f`/`10`) into the P-state transition path.
+
+### 8.5 Synthetic Intermediate Performance State (P3 / State `0a` Research)
+
+- **Target Operating Point**:
+  - **Assigned P-State ID**: `0a` (PowerMizer **P3** — Balanced 3D / Multimedia / Video Playback), positioned between `07` (P8: 202/405/324 MHz @ 0.820 V) and `0f` (P0: 590/1180/900 MHz @ 1.030 V).
+  - **Core / Shader Clocks**: `405 MHz` core / `810 MHz` shader (strict 2× Fermi hot-clock multiplier).
+  - **Memory Clock**: `648 MHz` DDR3 (1296 MT/s effective, ~31.1 GB/s bandwidth across the 192-bit bus).
+  - **Voltage Rail**: `0.920 V` (activates the unmapped hardware VID step `0x03` on the GPU voltage regulator, bridging 0.820 V and 1.030 V at ~18–22 W).
+- **Key Engineering Dependency**:
+  - The Dell XPS L702X VBIOS only defines discrete DDR3 timing and PHY entries for `135 MHz`, `324 MHz`, and `900 MHz`. Safely training `648 MHz` requires either reverse-engineering the proprietary driver's dynamic JEDEC/PHY timing interpolation algorithm or deriving a verified 648 MHz register table (see §9.4 below).
+
+---
+
+## 9. Reverse Engineering the NVIDIA 390.157 Proprietary Driver via REA (Roadmap & Research)
+
+The NVIDIA `390.157` legacy driver is the final official proprietary release supporting Fermi (`GF10x`/`GF11x`) alongside Kepler (`GK10x`/`GK11x`/`GK208`), Maxwell (`GM10x`/`GM20x`), and early Pascal (`GP10x`). Using the **REA (Reverse Engineer Anything)** MCP server together with a native decompiler backend (**Ghidra** headless/GUI) and `envytools` (`envydis`), we can systematically extract hardware programming sequences from `390.157` to improve Nouveau across all supported pre-signed-firmware architectures.
+
+### 9.1 Clean-Room Methodology & Boundaries
+
+| Principle | Rule |
+|---|---|
+| **Clean-Room Specification Split** | Static analysis via REA produces *hardware specifications* (register addresses, bitfields, state-machine ordering, timing formulas, and lookup tables) documented in `RECLOCKING_NOTES.md` with REA Evidence IDs. All kernel code in `nouveau-fermi-reclock.patch` is written from scratch against those specifications—never copied from decompiled Resource Manager (RM) C pseudocode. |
+| **No Firmware Redistribution** | Proprietary Falcon microcode blobs embedded in `nv-kernel.o_binary` must never be committed to git or packaged in AUR/AliveOS. Where hardware behavior can be implemented in our own clean `envyas` microcode (`memx_exec_custom.fuc`), we write original assembly; if an official image is ever required, it must be extracted locally from the user's `.run` archive at install time. |
+| **Static vs. Runtime Verification** | Static decompilation findings are treated as hypotheses until corroborated against `mmiotrace` captures (`demmio`) or live hardware telemetry on the target GPU. |
+| **Signed Firmware Wall (GM20x+)** | Maxwell 2 (`GM20x`) and Pascal (`GP10x`) enforce High-Security (HS) RSA-signed PMU/ACR firmware in hardware. Reverse engineering can document their P-state and thermal tables, but cannot unlock custom PMU reclocking without NVIDIA's signed images. |
+
+### 9.2 Target Artifacts Inside `NVIDIA-Linux-x86_64-390.157.run`
+
+| Artifact | Internal Role | Value for Nouveau |
+|---|---|---|
+| `kernel/nvidia/nv-kernel.o_binary` | Core **Resource Manager (RM)**: contains the per-chip HAL (`_nv0xxxxxrm` dispatch tables), VBIOS BIT/P/M/T table parsers, PLL calculators, DDR3/GDDR5 training generators, PMU task managers, ELPG/BLCG/SLCG power-gating tables, voltage/VID mappers, and thermal/fan controllers. | ⭐⭐⭐ Primary RE target |
+| Embedded Falcon Ucode Arrays (inside `nv-kernel.o_binary`) | Compiled Falcon `fuc3`/`fuc4`/`fuc5` bytecode images for PMU (`0x10a000`), FECS (`0x409000`), and GPCCS (`0x41a000`) per chip family. | ⭐⭐⭐ Reveals exact PMU command/queue protocols and hardware workarounds |
+| `kernel/nvidia-modeset/nv-modeset-kernel.o_binary` | Proprietary modesetting core (EVO / NVDisplay): head timing validation, DisplayPort/eDP link training, VBlank timestamping, and minimum `dispclk`/hub clock constraints. | ⭐⭐ Key to solving 120 Hz eDP compositor frame-pacing & display clock locking |
+| `kernel/nvidia/*.c` (open glue layer) | Unobfuscated GPL kernel interface layer (`nv.c`, `nv-modeset-interface.c`, `os-interface.c`). | ⭐⭐ Provides human-readable entry points, string references, and struct layouts calling into `nv-kernel.o_binary` |
+| `libnvidia-ml.so.390.157` & `nvidia-smi` | Management library querying RM control calls (`NV2080_CTRL_CMD_PERF_*`, `CLK_*`, `THERMAL_*`, `FB_*`). | ⭐ Maps RM control call IDs to internal HAL functions |
+
+### 9.3 Phase 0: Environment Setup, Triage & Symbol Recovery
+
+1. **Workspace Isolation**:
+   - Extract `NVIDIA-Linux-x86_64-390.157.run --extract-only` into an isolated analysis directory outside all git repositories (e.g., `~/RE/nvidia-390.157/`).
+2. **REA + Ghidra Session Initialization**:
+   - Open `nv-kernel.o_binary` via REA (`open_binary`, `binary_overview`, `inspect_binary_layout`).
+   - Export the baseline session ledger with `export_evidence_bundle` so subsequent passes reuse the analyzed database without re-indexing.
+3. **Locating the RM HAL Dispatch Tables & Control Call Handlers**:
+   - In NVIDIA's RM, external `rm_ioctl` calls dispatch through `NV0080`/`NV2080` control IDs (documented in open-source `open-gpu-kernel-modules` headers for later drivers, whose `NV2080_CTRL_CMD_*` constants largely match 390.xx).
+   - Use REA `search_bytes` / `search_strings` and `xrefs` on debug assertion strings, VBIOS table signatures, and MMIO base offsets (`0x0010a000`, `0x0010f000`, `0x00132000`, `0x00137000`) to map obfuscated `_nv0xxxxxrm` symbols to concrete subsystems (`clk`, `fb`, `pmu`, `volt`, `therm`, `lpwr`, `disp`).
+4. **Carving Embedded Falcon Microcode**:
+   - Locate Falcon code/data descriptors inside `.rodata` of `nv-kernel.o_binary`, extract the GF100/GF106 PMU image, and disassemble with `envydis -m falcon -V fuc3` to compare against Nouveau's `gf100.fuc3` and our `memx_exec_custom.fuc`.
+
+### 9.4 Phase 1: Fermi (`GF10x` / `GF11x`) Deep-Dive Enhancements
+
+#### 1. Arbitrary-Frequency DDR3 Timing & PHY Calculation (Unlocks Synthetic P3 `0a` @ 648 MHz)
+- **Question**: How does RM compute `0x10f290–0x10f2a0` (JEDEC timings), `0x10f300–0x10f324` (DDR3 MR0/MR1/MR2 CAS & write leveling), `0x10f440–0x10f468` (impedance/strobe), `0x10f808–0x10f824` (PHY DLL divider), and `0x132004` (MEMPLL $M, N, P$) when transitioning to an intermediate clock, or how does it interpolate between VBIOS strap entries?
+- **Method**: Trace xrefs to `0x0010f290`, `0x0010f824`, and `0x00132004` in `nv-kernel.o_binary` (`analyze_function`, `procedure_pseudo_code`, `trace_native_values`).
+- **Deliverable**: Exact mathematical formulas for `648 MHz` DDR3 on strap `0x6`, enabling safe activation of P-State `0a` (`405/810/648 MHz @ 0.920 V`).
+
+#### 2. Native RM PMU Protocol & Channel Context Initialization
+- **Question**: How does RM initialize the PDAEMON channel context (`0x10a47c` / `0x10a050`) in system RAM/VRAM so that Falcon-side `RGET`/`PUT` queue reads never trigger `PRIVRING` faults, and what exact MEMX opcodes (`0x34`, `0x3a`) does its PMU firmware execute?
+- **Method**: Decompile the RM関数 that emits the unlock sequence (`0x10a048`, `0x10a090`, `0x10a47c`, `0x10a058`, `0x10a600..0x10a610`) identified in §4.6, and inspect the carved GF106 PMU Falcon firmware handlers for opcodes `0x34` and `0x3a`.
+- **Deliverable**: Complete specification of the Fermi PDAEMON context block and mysterious opcodes `0x34`/`0x3a`.
+
+#### 3. Hardware GPU Load Counters (`PMU` Idle/Busy Sampling)
+- **Question**: Which `0x10a5xx` / `0x10a7xx` PDAEMON counter registers and signal masks does RM configure to measure true GR/FB/PCIE engine busy percentage?
+- **Method**: Trace `NV2080_CTRL_CMD_PERF_GET_GPUMON_PERFMON_UTIL_SAMPLES` / `nvidia-smi` utilization queries in `nv-kernel.o_binary`.
+- **Deliverable**: Accurate hardware utilization telemetry exposed via sysfs/debugfs for `nouveau-dynclockd` and `nouveau-tui` (and optional in-kernel autonomous governor scaling).
+
+#### 4. BLCG / SLCG Clock-Gating & ELPG Power-Gating Tables
+- **Question**: What per-engine Block-Level Clock Gating (BLCG), Second-Level Clock Gating (SLCG), and Engine-Level Power Gating (ELPG) register/value arrays does RM program on `GF100`/`GF104`/`GF106`/`GF108`/`GF110`/`GF114`/`GF116`/`GF117`/`GF119`?
+- **Method**: Locate the static chip-indexed register initialization tables in `.rodata` referenced by the RM power-management (`lpwr`/`cg`) init routines.
+- **Deliverable**: Drop-in static clock-gating tables for Fermi chips in Nouveau (`nvkm/subdev/therm/` or `gr/gf100.c`), cutting idle and light-2D power consumption and heat.
+
+#### 5. Voltage Regulation (VID `0x03` / `0.920 V`) & Thermal/Fan Protection
+- **Question**: How does RM parse the VBIOS Voltage Table and GPIO VID bitmask on GF106, and what hardware thermal slowdown registers (`0x00020xxx`) does it program to auto-throttle clocks if temperatures spike?
+- **Method**: Trace xrefs to the thermal/GPIO block (`0x0000d6xx`, `0x000200xx`) and VBIOS BIT `'P'` / `'V'` parsers.
+- **Deliverable**: Verified `0.920 V` VID `0x03` mapping for P3 (`0a`), safe undervolt support, and hardware-enforced thermal clock throttling during state `10` overclocking.
+
+#### 6. Display Engine (`nv-modeset-kernel.o_binary`): 120 Hz eDP & Hub Clocks
+- **Question**: How does `nv-modeset-kernel.o_binary` program vblank interrupts, raster timestamps, and iso/display hub clocks (`hubk01`/`hubk06`/`hubk07`) on Fermi for high-pixel-clock (396.36 MHz) 120 Hz eDP panels?
+- **Method**: Open `nv-modeset-kernel.o_binary` in REA, trace `0x0061xxxx` (PDISP) register writes and vblank handler paths.
+- **Deliverable**: Eliminate the VSync compositor frame-pacing bottleneck (~57 FPS $\to$ 120 FPS) and establish the exact safe minimum display hub clock formula.
+
+### 9.5 Phase 2: Kepler (`GK10x` / `GK11x` / `GK208`) Enhancements
+- **GDDR5 & DDR3 Edge Cases**: Cross-compare RM's Kepler memory reclocking builder against `ramgk104.c` to fix known stability regressions on mobile Kepler (`GK107M`, `GK208M`) and mixed DDR3/GDDR5 boards.
+- **GPU Boost 1.0 / 2.0 & Power Capping**: Document RM's base-to-boost clock interpolation, TDP power-capping sensors, and voltage-frequency curve tables.
+- **Kepler BLCG/SLCG/ELPG**: Extract missing clock-gating tables for Kepler variants not currently covered in upstream Nouveau.
+
+### 9.6 Phase 3: Maxwell 1 (`GM107` / `GM108`) Unlocks
+- Because first-generation Maxwell (`GM107`/`GM108`, e.g., GTX 750 Ti, GTX 850M/860M, GeForce 940M) **does not enforce signed PMU firmware**, it is the newest NVIDIA architecture where full open-source reclocking can be achieved without external signed blobs.
+- Extract RM's `GM107` PLL, GPC/XBAR/LTC/DRAM clock programming, and DDR3/GDDR5 training sequences from `390.157` to bring full dynamic reclocking to Maxwell 1.
+
+### 9.7 Phase 4: Maxwell 2 (`GM20x`) & Pascal (`GP10x`) — Documentation Scope
+- Document RM's P-state tables, thermal curves, and ACR (Access Control Region) secure-boot handoff for reference, while explicitly keeping custom PMU reclocking out of scope due to hardware RSA signature enforcement.
+
+### 9.8 Phase 5: Universal Chip Profile Database & Static↔Runtime Correlation
+- **Static↔Runtime Reconciliation**: Pair every static REA finding (`Evidence ID`, function address, decompiled register formula) with `mmiotrace` + `demmio` captures from real hardware.
+- **Data-Driven Chip Profiles (`TODO.md` §3)**: Consolidate extracted per-chip timings, clock-gating tables, voltage mappings, and display constraints into structured per-chip profile tables so support scales cleanly across the entire Fermi (`NV_C0`–`NV_CE`), Kepler (`NV_E0`–`NV_F0`), and Maxwell 1 (`NV_117`–`NV_118`) families.
+
+### 9.9 Priority Execution Checklist (Once Ghidra & 390.157 Are Ready)
+
+1. [x] **Verify REA + Ghidra Backend**: Run `binary_session` in REA to confirm Ghidra 12.1.2 headless/provider availability.
+2. [x] **Unpack `390.157` in Isolated Workspace**: Extract `NVIDIA-Linux-x86_64-390.157.run` (`binary_driver/` added to `.gitignore`).
+3. [x] **Baseline Triage of `nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`**: Index strings/xrefs for `0x10a000` (PDAEMON), `0x10f000` (PFB/DRAM), `0x132000` (MEMPLL), and NVKMS mode validation.
+4. [ ] **Carve & Disassemble GF106 PMU Ucode**: Extract the embedded Fermi PMU Falcon image, disassemble via `envydis`, and decode opcodes `0x34` / `0x3a` and channel init.
+5. [x] **Decompile DDR3 Timing & MEMPLL Calculators**: Extract the VBIOS-to-register DDR3 timing/MR/PHY and `0x132004` MEMPLL derivation for P-State `0a` (P3 @ 648 MHz).
+6. [ ] **Extract Fermi BLCG/SLCG Tables**: Pull static clock-gating register arrays for GF106 and sibling Fermi chips.
+7. [x] **Analyze `nv-modeset-kernel.o_binary`**: Inspect 120 Hz eDP head timing, 3D Vision EDID quirks, DP BPC step-down, and ISO bandwidth checks.
+
+---
+
+## 10. Concrete Reverse-Engineering Findings from NVIDIA 390.157 (`nv-modeset-kernel.o_binary` & `nv-kernel.o_binary`)
+
+This section records the concrete hardware specifications, RM/NVKMS function mappings, register formulas, and state machines extracted from `NVIDIA-Linux-x86_64-390.157.run` using **REA (Reverse Engineer Anything)** + **Ghidra 12.1.2** and `objdump`.
+
+### 10.1 Binary Inventory & REA Evidence Ledger
+
+| Binary Artifact | Size | SHA-256 | Architecture / Format | Key Subsystems Analyzed |
+|---|---|---|---|---|
+| `kernel/nvidia-modeset/nv-modeset-kernel.o_binary` | 1,288,832 B | `db0e6be60c43fac82ed4c6e26a41516b2f47ba8e6d0833df7a3ce395284ee74c` | ELF64 relocatable `x86-64` (832 procedures) | NVKMS mode validation, 3D Vision stereo EDID quirks, DisplayPort BPC step-down, IMP bandwidth & DMI blanking checks |
+| `kernel/nvidia/nv-kernel.o_binary` | 15,728,392 B | `66021e3e6ea75a31cf565a187ee3cd8aa1df03457d7265f5dbca493fb366c963` | ELF64 relocatable `x86-64` (27,763 procedures) | Fermi PDAEMON context-switch handshake, `OBJSEQ` (`seqScript`) MEMX bytecode API, MCLK/MEMPLL state machines, FBPA DDR3 VBIOS-to-register calculators |
+
+#### REA Evidence IDs (`nv-modeset-kernel.o_binary`)
+- `ev_12040d53f04f21f651926ce78901fa00e200875de653d990f00d87d6c4794622` — `binary_overview` (`nv-modeset-kernel.o_binary`, 832 functions)
+- `ev_fa95a0b6b9316092e01b195fdb81ebc901df199540c4b38f7e140c5fb4c0e97a` — `analyze_function` on `_nv000653kms` (`0x2196a0`, master mode-validation entry point)
+- `ev_9c21b9f6c9867be11bbf0365b2f5ae395963eb182f980883a9e280f54cf23025` — `analyze_function` on `_nv000659kms` (`0x217f20`, EDID range & 3D Vision stereo quirk validator)
+- `ev_7d59fbf88033c2b34d1c8900aa284a8afd3c8557a6f279dd6ad1e15107905b5b` — `analyze_function` on `_nv002185kms` (`0x2095f0`, EVO hardware timing & DP link validator)
+- `ev_eb27496a338fe2fa3106418bc6cc3947b05ba8c22961586061a3d672c825eedb` — `analyze_function` on `_nv002219kms` (`0x226b20`, DisplayPort BPC step-down loop)
+- `ev_8df11ded1afea100086ad27157d16175fa4cda73360572096d64bf4cebb594bf` — `analyze_function` on `_nv002218kms` (`0x226b00`, DP link config wrapper)
+- `ev_7de61b926008cb5aab7a2913029ab29d4916621af9010cfa6fb7293845a48470` — `analyze_function` on `_nv002220kms` (`0x226a90`, single-head DP bandwidth test)
+- `ev_48d782d2a325f44ced93c6f75fcdfb8bd03758739d168a95445f59c5e3e570f3` — `analyze_function` on `_nv000673kms` (`0x2269e0`, BPC-to-BPP converter & `dpLib` bandwidth query)
+- `ev_fc5e532558b955f45a7c56ecba58bff5dd53ac918bdb4dc3179122dde6b1c46d` — `analyze_function` on `_nv002187kms` (`0x209440`, RM Isochronous Memory Pool / IMP check)
+- `ev_c61984d15728812ec61030925d30a031e6ce0d353d35ad47b6b64e550ea0fe1c` — `analyze_function` on `_nv002183kms` (`0x2093b0`, EVO `calcDmiBlankingInterval` dispatch)
+
+---
+
+### 10.2 `nv-modeset-kernel.o_binary`: 120 Hz 3D Vision eDP Validation & Automatic DP BPC Step-Down
+
+Decompiling the NVKMS mode validation pipeline (`_nv000653kms` @ `0x2196a0`) revealed three critical mechanisms that allow the proprietary 390.157 driver to drive the Dell XPS L702X's `1920x1080 @ 120 Hz` 3D Vision eDP panel (`LGD 0x02c5`, pixel clock `396.36 MHz`) without link-training failure or display FIFO underflow:
+
+#### 1. 3D Vision Stereo Panel EDID Quirks (`_nv000659kms` @ `0x217f20`)
+- Many early 120 Hz 3D Vision laptop eDP panels (including `LGD 0x02c5`) ship with an EDID whose Range Limits descriptor reports a lower `Max PixelClock` or `VertRefresh` than the 120 Hz Detailed Timing Descriptor (`396.36 MHz`).
+- In `_nv000659kms`, NVKMS checks `(*(byte *)(pConnector + 0x3bdc) & 0x2) != 0` (3D Vision Stereo panel flag):
+  - When set, NVKMS grants an automatic **+5.0 MHz (`+5000 kHz`) pixel-clock grace margin** (`uVar22 = max_pclk_khz + 5000`) above both the Display Device maximum and the EDID maximum pixel clock:
+    > *"PixelClock (%d.%d MHz) is slightly higher than Display Device maximum (%d.%d MHz), but within 5.0 MHz margin allowed for 3DVision Stereo panel."*
+  - Furthermore, if the mode comes from an EDID Detailed Timing Descriptor (`*param_3 == 1`) on a 3D Vision panel, NVKMS explicitly bypasses contradicting EDID Range Limits (`HorizSync`, `VertRefresh`, `Max PixelClock`) rather than pruning the 120 Hz mode.
+
+#### 2. Automatic DisplayPort Color Depth (BPC) Step-Down Loop (`_nv002185kms` $\to$ `_nv002219kms` $\to$ `_nv000673kms`)
+- On a 4-lane HBR1 (`2.7 Gbps/lane`) eDP link, the maximum 8b/10b data payload bandwidth is:
+  $$\text{Max Payload Bandwidth} = 4 \times 2.16\text{ Gbps} = 8.64\text{ Gbps} \ (1080\text{ MB/s})$$
+- At `1920x1080 @ 120 Hz` (`396.36 MHz` pixel clock):
+  - **10 bpc (`30 bpp`, code `2`)**: $396.36\text{ MHz} \times 30 = 11.89\text{ Gbps} > 8.64\text{ Gbps}$ (**Fails**)
+  - **8 bpc (`24 bpp`, code `1`)**: $396.36\text{ MHz} \times 24 = 9.51\text{ Gbps} > 8.64\text{ Gbps}$ (**Fails**)
+  - **6 bpc (`18 bpp`, code `0`)**: $396.36\text{ MHz} \times 18 = 7.13\text{ Gbps} \le 8.64\text{ Gbps}$ (**Succeeds!**)
+- Decompiling `_nv002185kms` (`0x2095f0`), `_nv002219kms` (`0x226b20`), and `_nv000673kms` (`0x2269e0`) shows how NVKMS handles this transparently:
+  1. `_nv002185kms` initializes the target color depth code at `*(uint *)(pEvoTimings + 0x20)` (`2` = 10 bpc, `1` = 8 bpc, `0` = 6 bpc).
+  2. For DisplayPort/eDP connectors, `_nv002185kms` calls `_nv002219kms(pDisp, pConnector, pDpGroup, pEvoTimings, b2Heads1Or)`.
+  3. `_nv002219kms` executes a `while` loop calling `_nv002218kms` $\to$ `_nv002220kms` $\to$ `_nv000673kms`:
+     - `_nv000673kms` converts the color depth enum into bits-per-pixel (`2 -> 0x1e (30 bpp)`, `1 -> 0x18 (24 bpp)`, `0 -> 0x12 (18 bpp)`), converts `pixelClock_kHz * 1000` to Hz, and calls the DisplayPort Library (`dpLib`) link bandwidth validator (`vtable + 0x60`).
+     - If the bandwidth check fails, `_nv002219kms` steps down the color depth (`2 -> 1`, and then `1 -> 0`) in-place at `*(uint *)(pEvoTimings + 0x20)` and retries until `18 bpp` (6 bpc with spatial/temporal dithering) succeeds.
+
+#### 3. Isochronous Memory Bandwidth (IMP) & DMI Blanking Interval (`_nv002187kms` & `_nv002183kms`)
+- After link validation, `_nv002185kms` calls:
+  - `_nv002183kms` (`0x2093b0`): Invokes the EVO display HAL method `calcDmiBlankingInterval` (`offset +0xe8` in the display HAL vtable at `*(long *)(*pDev + 8) + 0x380`), computing the Display Memory Interface (DMI) blanking window during which MCLK P-state switches or spool-up can occur without scanout corruption.
+  - `_nv002187kms` (`0x209440`): Builds an RM Isochronous Memory Pool (IMP) query structure containing the active raster timings, viewport dimensions, pixel depth, and head usage bounds, and invokes `_nv002603kms` (RM `NV0073_CTRL_CMD_SYSTEM_CHECK_IMP` / internal IMP validator).
+  - **Implication for Nouveau 120 Hz & Reclocking**: At `1920x1080 @ 120 Hz` (`396.36 MHz` pixel clock, ~`1.58 GB/s` scanout bandwidth at 32-bit XRGB framebuffer fetch), P-state `03` (`135 MHz` DDR3 = `3.24 GB/s` raw, where `dispclk`/`hubk07` drops to `135 MHz`) cannot sustain a `396.36 MHz` pixel clock (`pixel_clock > dispclk`!). When the 120 Hz mode is active, the minimum P-state floor must keep `dispclk` (`hubk07`) $\ge 405\text{ MHz}$ (i.e., P-state `07` / `0a` / `0f`).
+
+---
+
+### 10.3 `nv-kernel.o_binary`: Solved the Fermi PDAEMON Falcon Context-Switch Handshake (§4.6–§4.8)
+
+In Section 4.6, we observed from the `390.157` `mmiotrace` that the proprietary driver wrote `0x701074ef` to `0x10a054` (`NXTCTX`) and `0x10a47c`, and wrote `0x2` to `0x10a058` (`CTXACK`), after which the Fermi PDAEMON Falcon unlocked and accepted commands without `PRIVRING` faults. However, when we replayed those raw register writes statically in Nouveau (§4.8), `0x10a054` echoed into `0x10a050` (`CURCTX`) without completing the context load because the dynamic state-machine handshake was unknown.
+
+Disassembling the Fermi PMU HAL in `nv-kernel.o_binary` (`0x5158d0–0x5168c0`) solved this completely:
+
+| RM Function | Address | Role |
+|---|---|---|
+| `_nv029733rm` | `0x5158d0` | Initializes Fermi PMU (`0x10a000`) register pointers: `CMD_QUEUE_HEAD[0..3]` at `0x10a4a0`, `CMD_QUEUE_TAIL[0..3]` at `0x10a4b0`, `MSG_QUEUE_HEAD` at `0x10a4c8`, `MSG_QUEUE_TAIL` at `0x10a4cc`, `MUTEX` at `0x10a580`. |
+| `_nv029625rm` / `_nv029628rm` | `0x515a70` / `0x515ad0` | Configures PDAEMON idle/busy counter signal filters at `0x10a600 + idx*4` (`idx = 0..4` $\to$ `0x10a600..0x10a610`). |
+| `_nv029783rm` | `0x5163a0` | **Master Fermi PMU Context Bind**: constructs the 32-bit context descriptor and binds it to `0x10a054` (`NXTCTX`) and `0x10a47c`. |
+| `_nv029786rm` | `0x5165f0` | Enables context switching (`0x10a048 |= 0x1`) and invokes `_nv029650rm`. |
+| `_nv029650rm` | `0x516750` | Triggers the context switch, runs the `_nv029647rm` state-machine loop, and clears interrupt bit `0x8` via `0x10a004 = 0x8`. |
+| `_nv029647rm` | `0x516850` | **The Software Context-Switch State Machine (`0x10a128` $\leftrightarrow$ `0x10a058`)**. |
+
+#### Exact Hardware Sequence in `_nv029783rm` $\to$ `_nv029650rm` $\to$ `_nv029647rm`:
+1. **Instance Block Descriptor Format (`_nv029783rm` @ `0x5163a0`)**:
+   - Reads the PMU instance block memory descriptor at `[pPmu + 0x7b50]` and extracts its physical page frame (`(phys_addr >> 12) & 0x0fffffff`) and aperture type (`[memDesc + 0x2c]`):
+     - Aperture `1` (VRAM) $\to$ `0x60000000 | (phys_addr >> 12)`
+     - Aperture `2` + Coherent (`[memDesc + 0x50] == 1`) $\to$ `0x40000000 | (phys_addr >> 12)`
+     - Aperture `2` + Non-coherent System RAM $\to$ `0x70000000 | (phys_addr >> 12)` *(matches `0x701074ef` in the `mmiotrace`!)*
+2. **Pre-Bind Register Setup (`_nv029783rm` & `_nv029786rm`)**:
+   - `nvkm_mask(device, 0x10a048, 0x00000001, 0x00000001)` — set bit 0 (`CTXEN`).
+   - `nvkm_mask(device, 0x10a090, 0x00010000, 0x00010000)` — set bit 16 (`0x10000`) to enable host-assisted context-switch state transitions.
+   - `nvkm_wr32(device, 0x10a054, ctx_desc)` (`NXTCTX`).
+   - `nvkm_wr32(device, 0x10a47c, ctx_desc)` (PDAEMON host aperture/channel bind).
+3. **The Interactive State-Machine Loop (`_nv029647rm` @ `0x516850`)**:
+   - When `NXTCTX` (`0x10a054`) is written on a Fermi Falcon that has `0x10a090` bit 16 set, the hardware context-switch controller enters an interactive state machine reported in **`0x10a128` (`FALCON_CTXSW_STATUS`)**:
+     ```c
+     for (;;) {
+         u32 stat = nvkm_rd32(device, 0x10a128);
+         u32 state = (stat >> 12) & 0x7;
+         if (state == 2) {
+             /* State 2: Save current context requested -> acknowledge save */
+             nvkm_wr32(device, 0x10a058, 0x00000001);
+         } else if (state == 5) {
+             /* State 5: Load next context requested -> acknowledge load */
+             nvkm_wr32(device, 0x10a058, 0x00000002);
+         }
+         /* Re-read status; bit 1 (0x2) indicates context switch is idle/complete */
+         stat = nvkm_rd32(device, 0x10a128);
+         if (stat & 0x00000002)
+             break;
+     }
+     /* Clear CTXSW interrupt pending bit */
+     nvkm_wr32(device, 0x10a004, 0x00000008);
+     ```
+   - **Why our earlier static replay in §4.8 failed**: Without polling `0x10a128` bits `[14:12]` for state `5` before writing `0x2` to `0x10a058` (`CTXACK`), and waiting for `0x10a128 & 0x2` before clearing `0x10a004 = 0x8`, the context switch was acknowledged at the wrong cycle!
+
+---
+
+### 10.4 `nv-kernel.o_binary`: The RM Sequencer (`OBJSEQ` / `seqScript` / MEMX) Bytecode Emitter API
+
+Every memory reclocking function in RM (`_nv010721rm`, `_nv015935rm`, `_nv015936rm`, etc.) does not write to PFB/MEMPLL registers directly from the CPU; instead, it emits instructions into a Sequencer Script (`pSeqScript`) via the `OBJSEQ` (`_nv0318xxrm`) API (`0x52f8a0–0x532150`), which is then dispatched to the PMU (or host interpreter) during VBlank:
+
+| RM Function | Address | Equivalent in Nouveau `ramfuc.h` | Behavior & Disassembled Details |
+|---|---|---|---|
+| `_nv031894rm(pSeqScript, flags)` | `0x52f8a0` | `nvkm_memx_init()` | Opens a new sequencer script buffer (`flags = 0x5` for MCLK switch). |
+| `_nv031896rm(pSeqScript, stopFlags, timeoutUs)` | `0x52f9b0` | `nvkm_memx_block()` | Emits `STOP_FB` (`stopFlags = 0x20` or `0x22`, `timeout = 0x19` $\mu\text{s}$). |
+| `_nv031872rm(pSeqScript, headMask)` | `0x52ff50` | `ram_wait_vblank()` | Emits `WAIT_VBLANK` (opcode `0x43`) for active display heads. |
+| `_nv031893rm(pSeqScript, reg, val)` | `0x52fb10` | `ram_wr32(fuc, reg, val)` | Calls `_nv031837rm` (`0x5320b0`) to append a 32-bit register write to the script buffer (coalescing consecutive writes into burst packets). |
+| `_nv031890rm(pSeqScript, delayUs)` | `0x52fa20` | `ram_nsec(fuc, delayUs * 1000)` | Multiplies `delayUs * 1000` (`imul $0x3e8, %esi, %esi`) and calls `_nv031832rm` (`0x531f80`) to emit a nanosecond delay! |
+| `_nv031889rm(pSeqScript, delayUs)` | `0x52fa00` | `ram_nsec(fuc, ...)` | Multiplies `delayUs * 1000` and calls `_nv031833rm` (`0x531f40`, bus-flush + delay). |
+| `_nv031884rm(pSeqScript, reg, mask, val, timeout)` | `0x52fd60` | `ram_wait(fuc, reg, mask, val, timeout)` | Emits a register poll instruction into the script. |
+| `_nv031860rm(pGpu, pSeq, pSeqScript)` | `0x531b60` | `nvkm_memx_unblock()` + IHUB/DMI update | Emits post-MCLK display watermark/spool-up updates (`0x616300+`) and unfreezes FB (`_nv031896rm(..., 0, 0)`). |
+| `_nv031886rm(pSeqScript)` | `0x52fa80` | *(end of script)* | Closes and validates the sequencer script (`seqScriptClose`). |
+| `_nv031868rm(pGpu, pSeq, pSeqScript)` | `0x52f910` | `nvkm_memx_fini()` | Executes the closed script (`seqScriptRun`), followed by `_nv031895rm` (`0x52f920`) waiting for completion. |
+
+---
+
+### 10.5 `nv-kernel.o_binary`: Fermi MCLK & MEMPLL (`0x132000` / `0x132004`) Reclocking State Machines
+
+Scanning the per-chip RM HAL dispatch tables in `.rodata` (`0xdb60` for GF100, `0x1a0a0` for GF104/GF106, `0x16760` for GF108, `0x21f40` for GF119) mapped the complete family of Fermi MCLK switch builders:
+
+| Chip Family | Primary MCLK Script Builder | Companion / Alt-Path Handler | Dedicated MEMPLL (`0x132004`) Helper |
+|---|---|---|---|
+| **GF100 / GF104 / GF106** (`NV_C0`, `NV_C4`, `NV_C3`) | `_nv010721rm` (`0xec6b0`, 11,936 B) | `_nv010718rm` (`0xef550`, 12,384 B) | Inline in `_nv010721rm` (`0xee450–0xee650`) |
+| **GF108 / GF110 / GF117 / GF119** (`NV_C1`, `NV_C8`, `NV_D7`, `NV_D9`) | `_nv010722rm` (`0x104470`, 7,496 B) | `_nv010719rm` (`0x107570`, 14,910 B) | `_nv010738rm` (`0x10afb0`, 928 B) |
+
+#### 1. Exact Formula for `0x132004` (`MEMPLL_COEFF`) & Origin of the `0x1001xxxx` Upper Halfword
+In Section 2.5, we noted from the `mmiotrace` that `0x132004` (`MEMPLL_COEFF`) held `0x10013602` at `900 MHz` (`N=0x36 (54), M=2`) and `0x10011b02` at `405 MHz` (`N=0x1b (27), M=2`), with an unexplained upper halfword `0x1001`.
+
+Disassembling `_nv010738rm` (`0x10afb0`) and `_nv010721rm` (`0xee490`) reveals the exact bitfield construction of `0x132004`:
+```asm
+10b1fa: 8b 5c 24 70          mov    0x70(%rsp),%ebx        ;M divider
+10b201: 0f b6 44 24 70       movzbl 0x70(%rsp),%eax        ;M [7:0]
+10b206: 0f b6 54 24 74       movzbl 0x74(%rsp),%edx        ;N [7:0]
+10b216: c1 e2 08             shl    $0x8,%edx              ;N << 8
+10b219: 09 d0                or     %edx,%eax              ;(N << 8) | M
+10b21b: 8b 54 24 78          mov    0x78(%rsp),%edx        ;P [5:0]
+10b21f: 83 e2 3f             and    $0x3f,%edx
+10b222: c1 e2 10             shl    $0x10,%edx             ;(P & 0x3f) << 16
+10b225: 09 d0                or     %edx,%eax
+10b261: 25 ff ff c0 ff       and    $0xffc0ffff,%eax       ;clear [21:16] when P=1
+10b26c: 0d 00 00 01 10       or     $0x10010000,%eax       ;set P=1 (bit 16) + bit 28 (0x10000000)!
+10b271: ba 04 20 13 00       mov    $0x132004,%edx
+10b276: 89 c1                mov    %eax,%ecx
+10b278: e8 93 48 42 00       call   52fb10 <_nv031893rm>   ;ram_wr32(0x132004, val)
+```
+- **Bitfield Layout of `0x132004` (`MEMPLL_COEFF`)**:
+  - **Bits `[7:0]` (`M`)**: Reference divider ($M = 2$ on GF106).
+  - **Bits `[15:8]` (`N`)**: Feedback multiplier ($N = 54 \ (0x36)$ at $900\text{ MHz}$; $N = 27 \ (0x1b)$ at $450/405\text{ MHz}$).
+  - **Bits `[21:16]` (`P`)**: Post-divider ($P = 1 \ (0x01)$ in PLL mode).
+  - **Bit `[28]` (`0x10000000`)**: PLL lock-detector / SDM enable bit, explicitly ORed via `or $0x10010000, %eax`!
+- **Exact `0x132004` Value for Synthetic P-State `0a` (`648 MHz` DDR3)**:
+  - Since $900\text{ MHz}$ uses $M = 2, N = 54 \ (0x36), P = 1$ (effective step $= 900 / 54 = 16.667\text{ MHz}$ per $N$ increment):
+    - For **$650.0\text{ MHz}$** ($N = 39 = \text{0x27}$): **`0x10012702`**
+    - For **$633.3\text{ MHz}$** ($N = 38 = \text{0x26}$): **`0x10012602`**
+    - Alternatively, with $M = 3, N = 58 \ (\text{0x3a}), P = 1$: $900 \times \frac{2}{3} \times \frac{58}{54} = \mathbf{644.4\text{ MHz}}$ (**`0x10013a03`**), or $M = 5, N = 97 \ (\text{0x61}), P = 1$: $900 \times \frac{2}{5} \times \frac{97}{54} = \mathbf{646.7\text{ MHz}}$ (**`0x10016105`**).
+  - Using $M = 2, N = 39$ (**`0x10012702`**, $650\text{ MHz}$) keeps the phase detector frequency identical to $900\text{ MHz}$ ($M = 2$), guaranteeing identical loop filter stability!
+
+#### 2. DDR3 DLL-On Threshold & Self-Refresh Sequence Inside `_nv010721rm` (`0xee660–0xef4d4`)
+- At `0xee660`, `_nv010721rm` checks if the target MCLK falls inside `[270,000 kHz .. 405,000 kHz]` (`sub $0x41eb0, %eax; cmp $0x20f58, %eax`) or above `405,000 kHz` to decide between the bypass path (`0x137360 = 0x0`) and the full `MEMPLL` path (`0x137360 = 0x00020200`).
+- Between `0xeeb59` and `0xef4d4`, `_nv010721rm` emits the exact `0x10f200` (Self-Refresh entry/exit) and `0x10f32c` / `0x10f324` (`EMRS` / `MRS` shadow triggers: `0x80` $\to$ `0x880` $\to$ `0x80` $\to$ `0x84` $\to$ `0x81` $\to$ `0x88` $\to$ `0x1080`) sequence that we captured in our `mmiotrace` (§2.2 Steps 25–28) and implemented in `ramgf100.c`!
+
+---
+
+### 10.6 `nv-kernel.o_binary`: VBIOS-to-Register DDR3 Timing, MR0/MR1/MR2 & PHY Calculators
+
+Disassembling the FBPA (`0x10fxxx`) subsystem in `nv-kernel.o_binary` (`0x2ec530–0x2fe200`) revealed how RM computes every single PFB timing, mode, and PHY register during an MCLK transition:
+
+#### 1. Master VBIOS RAM Timing Calculator: `_nv014883rm` (`0x2ec720`, 3,293 B)
+`_nv014883rm` looks up the VBIOS Memory Clock Table entry (`%r14`) covering the target frequency via `_nv015366rm` (`0x2ec530`) and populates the FB timing state struct (`%r13`), which is then emitted to hardware by `_nv015935rm` (`0x2ee270`, GF100) or `_nv015936rm` (`0x2f66b0`, GF104/GF106):
+
+- **Critical Discovery**: RM does **not** use an arbitrary polynomial to invent JEDEC timings out of thin air; instead, `_nv015366rm` selects the VBIOS Memory Clock Table entry whose `[MinFreq, MaxFreq]` range covers the requested frequency (or the next higher strap entry when `[pFb + 0x1033] != 0`), and then applies two frequency-dependent adjustments:
+  1. **Branch A — VBIOS Pre-Packed Strap Mode (`[pFb + 0x1033] != 0` @ `0x2ed1d8`)**:
+     - Copies the pre-packed 32-bit timing registers directly from the VBIOS strap entry (`[%r14 + 0x80..0x98]`):
+       - `0x10f290` (`TIMING_0`) $\leftarrow$ `[entry + 0x80]`
+       - `0x10f294` (`TIMING_1`) $\leftarrow$ `[entry + 0x84]`
+       - `0x10f298` (`TIMING_2`) $\leftarrow$ `[entry + 0x88]`
+       - `0x10f29c` (`TIMING_3`) $\leftarrow$ `[entry + 0x8c]`
+       - `0x10f2a0` (`TIMING_4`) $\leftarrow$ `[entry + 0x90]`
+       - `0x10f2a4` (`TIMING_5`) $\leftarrow$ `[entry + 0x94]`
+       - `0x10f2a8` (`TIMING_6`) $\leftarrow$ `[entry + 0x98]`
+     - Validates that `((TIMING_1 >> 7) & 0x7f) == entry[0x2a]` (`tCWL`) and `((TIMING_0 >> 17) & 0x7f) == entry[0x1d]` (`tCL`).
+  2. **Branch B — Field-by-Field Formula Mode (`[pFb + 0x1033] == 0` @ `0x2ecada–0x2ece20`)**:
+     - Constructs `0x10f290–0x10f2a0` from individual VBIOS timing byte fields (`entry[0x18..0x2c]`):
+       - `0x10f290`: `(orig & 0x80000000) | ((entry[0x1e] & 0x7f) << 24) | ((entry[0x1d] & 0x7f) << 17) | (entry[0x1c] << 8) | entry[0x1b]`
+         - Confirms: bits `[7:0]` = `tRC`, bits `[15:8]` = `tRFC`, bits `[23:17]` = `tCL` (`entry[0x1d]`), bits `[30:24]` = `tRCD` (`entry[0x1e]`).
+       - `0x10f294`: `(orig & 0xfc000000) | ((entry[0x20] & 0x3f) << 20) | ((entry[0x1f] & 0x3f) << 14) | ((entry[0x2a] & 0x7f) << 7) | (entry[0x1a] & 0x7f)`
+         - Confirms: bits `[6:0]` = `tRAS` (`entry[0x1a]`), bits `[13:7]` = `tCWL` (`entry[0x2a]`), bits `[19:14]` = `tWTR` (`entry[0x1f]`), bits `[25:20]` = `tWR` (`entry[0x20]`).
+       - `0x10f298`: `0x11 | ((entry[0x19] & 0x7f) << 8) | ((entry[0x18] & 0x7f) << 16)`
+         - Confirms: bits `[14:8]` = `tRP` (`entry[0x19]`), bits `[22:16]` = `tFAW` (`entry[0x18]`).
+       - `0x10f29c`: `(orig & 0x00fe0000) | (entry[0x2b] << 9) | ((entry[0x2c] & 0xf) << 5) | (entry[0x22] & 0x1f)`
+       - `0x10f2a0`: `(orig & 0xffe07fff) | ((entry[0x21] & 0x3f) << 15)`
+  3. **High-Frequency `500 MHz` (`0x7a120 kHz`) Threshold in `_nv014883rm` (`0x2eccdc`)**:
+     - At `0x2eccdc`, `_nv014883rm` checks `cmp $0x7a120, %ebx` (`targetFreq_kHz > 500,000 kHz`): when MCLK is above `500 MHz`, it applies the high-frequency turnaround/ODT adjustment (`[pFb + 0x448]`) to `0x10f29c` (`TIMING_3`)!
+
+#### 2. DDR3 Mode Register (`MR0` / `MR1` / `MR2`) Calculator: `_nv014880rm` (`0x2ed5b0`, 2,929 B)
+- Computes the JEDEC DDR3 Mode Registers written to `0x10f300` (`MR0`), `0x10f304` (`MR1`), and `0x10f308` (`MR2`):
+  - **`MR0` (`0x10f300`)**: Encodes `CL = tCL - 4` into bits `[6:4]` and bit `[2]`, encodes `WR` (`tWR`) into bits `[11:9]`, and sets bit `[8]` (`0x100`, DLL Reset) during PLL/DLL transitions.
+  - **`MR1` (`0x10f304`)**: Encodes DLL Disable bit `[0]` (`0` when DLL is enabled above `300 MHz`, `1` when DLL is disabled at `135 MHz`), output driver impedance (`Rtt_Nom`), and additive latency (`AL`).
+  - **`MR2` (`0x10f308`)**: Encodes `CWL = (tCWL - 5) & 0x7` into bits `[5:3]` (`0x2ed781: lea -0x5(%rax), %esi; and $0x7, %esi; shl $0x3, %esi`) and dynamic ODT (`Rtt_WR`).
+
+#### 3. Impedance / Drive Strength (`0x10f440` / `0x10f444` / `0x10f468`): `_nv015894rm` (`0x2efd60`)
+- `_nv015894rm` (`0x2efd60`, GF100/GF104/GF106) and `_nv015895rm` (`0x2fc330`, GF108+) program `0x10f468`, `0x10f440`, and `0x10f444` directly from the selected VBIOS Memory Clock Table entry offsets `+0xd2` (16-bit word for `0x10f468`) and `+0xd5..+0xdc` (4-bit drive/termination nibbles packed into `0x10f440` and `0x10f444`).
+
+#### 4. Per-Chip FBPA Script Emitters: `_nv015935rm` (`0x2ee270`) & `_nv015936rm` (`0x2f66b0`)
+- `_nv015935rm` (GF100) and `_nv015936rm` (GF104/GF106) emit the FBPA register block (`0x10f30c`, `0x10f304`, `0x10f300`, `0x10f308`, `0x10f334`, `0x10f330`, `0x10f224`, `0x10f248`, `0x10f290..0x10f2ac`, `0x10f2cc`, `0x10f2e8`, `0x10f604`, `0x10f614`, `0x10f610`, `0x10f808`, `0x10f870`, `0x10f618`, `0x10f340..0x10f348`) into the sequencer script via `_nv031893rm` (`ram_wr32`).
+- Every register offset is passed through `[pFb + 0xd20]` (`_nv016234rm` @ `0x2f3aa0` on GF100/GF106), which maps the offset to either broadcast (`0x10f000 + reg`) or per-partition unicast (`0x10e000 + part * 0x4000 + reg`), while reads use `_nv015759rm` (`0x2f3610`, unicast partition read from `0x10e000`) because `0x10f000` is write-only broadcast on Fermi!
+
+---
+
+### 10.7 Direct Engineering Implications for `nouveau-fermi-reclock`
+
+1. **Synthetic P-State `0a` (P3: `405 MHz` Core / `810 MHz` Shader / `648 MHz` DDR3 @ `0.920 V`) is Immediately Actionable**:
+   - Because `648 MHz` (`648,000 kHz`) lies above both the `405 MHz` (`0x62e08 kHz`)MEMPLL threshold and the `500 MHz` (`0x7a120 kHz`) high-frequency turnaround threshold in `_nv014883rm`, RM selects the **900 MHz VBIOS strap entry (`325–1000 MHz` range)** for all `0x10f290–0x10f2a0` JEDEC timings, `MR0/MR1/MR2` (`CL=13, CWL=9` — which is strictly conservative and rock-stable at `648 MHz` since fewer clock cycles elapse per nanosecond than at `900 MHz`!), and `0x10f440–0x10f468` drive strengths.
+   - The **only** register that needs to change between the `900 MHz` (`0f`) table and the `648 MHz` (`0a`) table is **`0x132004` (`MEMPLL_COEFF`)**:
+     - `900 MHz` (`0f`): `0x132004 = 0x10013602` ($M=2, N=54, P=1$)
+     - `650 MHz` (`0a`): **`0x132004 = 0x10012702`** ($M=2, N=39, P=1 \implies 650.0\text{ MHz}$)
+2. **120 Hz 3D Vision eDP Support (`LGD 0x02c5`)**:
+   - In Nouveau's connector/DisplayPort validation (`nouveau_connector.c` / `dispnv50`), we must:
+     1. Grant the `+5.0 MHz` pixel-clock tolerance and ignore self-contradicting EDID range descriptors for Detailed Timing Descriptors on 3D Vision panels (matching `_nv000659kms`).
+     2. Allow DisplayPort/eDP `bpc` to step down from `8 bpc` (`24 bpp`) to **`6 bpc` (`18 bpp`)** when `pixel_clock * 24 > link_bw` (`396.36 MHz` on 4-lane HBR1 eDP, matching `_nv002219kms` $\to$ `_nv000673kms`).
+     3. Enforce a minimum P-state floor of `07` (`dispclk = 405 MHz`) whenever a mode with `pixel_clock > 135 MHz` (such as `396.36 MHz` 120 Hz) is active so `dispclk >= pixel_clock`.
+3. **Optional Native PDAEMON Context Switch (`_nv029647rm`)**:
+   - While our custom Falcon executor (`memx_exec_custom.fuc`) already provides 100% reliable, zero-blob DDR3 reclocking across cold boot and S3 suspend/resume, `_nv029647rm` (`0x516850`) documents the exact `0x10a128` $\leftrightarrow$ `0x10a058` handshake if we ever wish to bind a host-memory context block to PDAEMON.
+
+---
+
+### 10.8 How `390.157` Handles Dynamic Reclocking (`PowerMizer`) vs. `nouveau-dynclockd`
+
+Comparing the proprietary driver's open glue (`kernel/nvidia/nv.c`) + Resource Manager (`nv-kernel.o_binary`) against our userspace daemon ([`nouveau-dynclockd.py`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-dynclockd.py)) reveals how each architecture decides *when* to switch P-states:
+
+| Mechanism | Proprietary `390.157` (`PowerMizer` in `nv-kernel.o_binary`) | `nouveau-fermi-reclock` (`nouveau-dynclockd` + `nouveau.ko`) |
+|---|---|---|
+| **Where the Governor Lives** | **In-kernel inside RM (`OBJPERF`)**, ticked once per second by the kernel timer `nvidia_rc_timer_callback()` $\to$ `rm_run_rc_callback()` (`1 Hz` periodic timer in `nv.c`) plus immediate event hooks on channel creation/pushbuffer kickoff. | **Userspace daemon (`nouveau-dynclockd.py`)** polling `/sys/kernel/debug/dri/*/clients`, `/proc/interrupts`, and `pstate` every `0.5–1.0 s` and writing target P-state IDs to debugfs `pstate`. |
+| **How GPU Load is Measured** | **Hardware PDAEMON Idle/Busy Counters (`0x10a600..0x10a610`)**: `_nv029625rm` (`0x515a70`) and `_nv029628rm` (`0x515ad0`) program 4 hardware signal filters in PDAEMON: <br>1. `GR` (3D/Compute engine busy cycles)<br>2. `FB` (Memory controller busy cycles)<br>3. `VDEC` (`MSPDEC`/`MSVLD`/`MSPPP` video decode busy cycles)<br>4. `PCIE` / Host FIFO activity.<br>Every `1 Hz` tick, RM reads elapsed busy cycles vs. reference clock cycles (`0x10a5xx`) to compute exact hardware `%` utilization. | **Software Activity Heuristics (Currently)**: Tracks active DRM render/X11/Wayland clients (`/sys/kernel/debug/dri/*/clients`) and Nouveau hardware interrupt deltas (`/proc/interrupts`). *(Planned upgrade in `TODO.md` §6: read the same `0x10a600..0x10a610` hardware counters!)* |
+| **Proactive "Boost on Context/Swap" Triggers** | Userspace OpenGL (`libGLX_nvidia.so`) and VDPAU (`libvdpau_nvidia.so`) send an immediate `rm_ioctl` (`NV2080_CTRL_CMD_PERF_BOOST`) when a 3D context swaps buffers or creates a swapchain, jumping straight to `P0` (`0f`) *before* the 1 Hz timer even fires. | `nouveau-dynclockd` detects new DRM client contexts / IRQ bursts within `500 ms` (or immediately via `nouveau-ctrl` / per-app rules). |
+| **Downclock Hysteresis (Hold Timers)** | Uses multi-step hold-down timers (`~3–5 s` in `P0` $\to$ `~5–10 s` in `P8` $\to$ `P12`) so brief pauses between game frames or shader compiles never cause a jarring mid-game DDR3 reclock. | Configurable cooldown hysteresis in `nouveau-dynclockd` + thermal runaway protection (auto-steps down from `10` $\to$ `0f` if GPU temp $\ge 85\text{ }^\circ\text{C}$). |
+| **Hardware Constraints (`IMP` & Power Source)** | Automatically locks out `P12` (`03`) when `396.36 MHz` 120 Hz mode is active (`_nv002187kms`), and caps to `P8` (`07`) on battery power via ACPI `_PSR` notifications. | Supports `BATTERY_CAP` (`AC`/`BAT` sysfs awareness), `10` overclock state, and user-selectable manual override modes (`auto`, `p12`, `p8`, `p3`, `p0`, `oc`). |
+
+

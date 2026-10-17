@@ -11,8 +11,9 @@ testing/*.raw
 testing/nvidia_full_reclock_trace.txt
 testing/nvidia_reclock_full.raw
 
-# Local diagnostic reports and scratch
+# Local diagnostic reports, scratch, and binary driver analysis
 scratch/
 tmp/
+binary_driver/
 nouveau_fermi_diag_report.md
 fermi_memory_reclock_report.md

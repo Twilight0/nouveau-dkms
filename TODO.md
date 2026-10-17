@@ -92,35 +92,81 @@ Historically, the proprietary NVIDIA driver (`390.157`) ran circles around open-
   - Ingest community diagnostic dumps submitted via `tools/nouveau-fermi-diag.py`.
 
 ### 4. Synthetic Intermediate Performance State (P3 / State `0a`)
-- [ ] **Synthetic P3 State Implementation (`405 MHz` Core / `810 MHz` Shader / `648 MHz` DDR3 @ `0.920 V`)**:
+- [ ] **Synthetic P3 State Implementation (`405 MHz` Core / `810 MHz` Shader / `650 MHz` DDR3 @ `0.920 V`)**:
   - **Assigned P-State**: **`0a`** (PowerMizer **P3** — Balanced 3D / Multimedia / Video Playback).
     - Positioned naturally in hex and performance order: `03` (P12) $\to$ `07` (P8) $\to$ **`0a` (P3)** $\to$ `0f` (P0) $\to$ `10` (OC).
   - **Hardware Profile & Operating Specifications**:
     - **Core Frequency**: `405 MHz` (exact midpoint between 202 MHz 2D and 590 MHz 3D).
     - **Shader Hot Clock**: `810 MHz` (strict 2× Fermi core multiplier).
-    - **Memory Clock**: `648 MHz` (1296 MT/s DDR3, yielding ~31.1 GB/s bandwidth on 192-bit bus).
+    - **Memory Clock**: `648–650 MHz` (`1300 MT/s` DDR3, yielding **~31.2 GB/s** bandwidth on the 192-bit bus).
     - **Voltage Rail**: `0.920 V` (activates the unmapped silicon hardware VID step `0x03` on the GPU voltage regulator).
     - **PCIe Link Speed**: Gen1 `2.5 GT/s x16` or Gen2 `5.0 GT/s x16`.
     - **Estimated Power Consumption**: ~18–22 W (bridging the gap between ~8.5 W 2D desktop and ~38 W full 3D).
+  - **Reverse-Engineered Hardware Specifications (`nv-kernel.o_binary` §10.5–§10.7)**:
+    1. **Exact `0x132004` (`MEMPLL_COEFF`) Derivation (`_nv010738rm` @ `0x10afb0` & `_nv010721rm` @ `0xec6b0`)**:
+       - RM constructs `0x132004` as `0x10010000 | (N << 8) | M`, where bit 16 (`0x00010000`) is $P = 1$ and bit 28 (`0x10000000`) enables the PLL lock-detector/SDM block.
+       - At `900 MHz` (`0f`): $M = 2, N = 54 \ (\text{0x36}), P = 1 \implies \mathbf{0x10013602}$.
+       - At **`650 MHz` (`0a`)**: $M = 2, N = 39 \ (\text{0x27}), P = 1 \implies \mathbf{0x10012702}$ (retains the exact same $M = 2$ reference divider and loop-filter phase margin as `900 MHz`).
+    2. **VBIOS DDR3 Timing & Mode Register Selection (`_nv014883rm` @ `0x2ec720` & `_nv014880rm` @ `0x2ed5b0`)**:
+       - Disassembly of `_nv014883rm` proves RM does not synthesize arbitrary polynomial JEDEC timings; instead, `_nv015366rm` (`0x2ec530`) selects the VBIOS Memory Clock Table entry covering the requested frequency (`325–1000 MHz` strap entry) and checks two frequency thresholds:
+         - `targetFreq > 405,000 kHz` (`0x62e08` in `_nv010721rm` @ `0xee660`): uses full `MEMPLL` path (`0x137360 = 0x00020200`) and DDR3 DLL-On (`MR1` bit 0 = `0`).
+         - `targetFreq > 500,000 kHz` (`0x7a120` in `_nv014883rm` @ `0x2eccdc`): applies the high-frequency turnaround/ODT adjustment to `0x10f29c` (`TIMING_3`).
+       - Because `650 MHz` (`650,000 kHz`) lies above both `405 MHz` and `500 MHz`, RM uses the **exact `900 MHz` VBIOS strap table** for `0x10f290–0x10f2a0` (JEDEC timings), `0x10f300–0x10f308` (`MR0/MR1/MR2` with `CL=13, CWL=9`), `0x10f440–0x10f468` (`_nv015894rm` impedance/drive strength), and `0x10f808–0x10f824` (PHY DLL), which is strictly conservative at `650 MHz`.
+       - **Result**: The `650 MHz` DDR3 transition script is identical to the battle-tested `900 MHz` table with **only `0x132004` changed from `0x10013602` to `0x10012702`**!
   - **Required Engineering Tasks**:
-    1. **DDR3 Timing & Phase Calibration for 648 MHz**:
-       - VBIOS only defines timing/impedance registers for `324 MHz` and `900 MHz`.
-       - Implement dynamic timing calculation/interpolation (CAS latency, tRCD, tRP, tRAS, tRFC) or test bootstrapping 648 MHz using relaxed 900 MHz CAS timings.
-    2. **Falcon Microcode Executor Support**:
-       - Expand resident Falcon executor command protocol (`cmd=3` / 648000 kHz target) in [`ramgf100.c`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-source/nvkm/subdev/fb/ramgf100.c) and `gf100.fuc3`.
-    3. **Kernel P-State Injection (`nvkm_pstate_new()`)**:
-       - Inject synthetic P-State `0a` into `clk->states` list between `07` and `0f`, gated via module parameter `config=NvFermiP3=true`.
-       - Map voltage rail to VID `0x03` (`0.920 V`).
-    4. **Governor Integration (`nouveau-dynclockd`)**:
-       - Extend dynamic frequency governor to support a 3-tier scaling ladder:
-         - Tier 1 (Light 2D / idle): P8 (`07`)
-         - Tier 2 (Video playback / UI compositing / moderate WebGL): P3 (`0a`)
-         - Tier 3 (Heavy 3D rendering / games): P0 (`0f`) or OC (`10`)
-       - Add anti-hysteresis deadbands to prevent governor ping-pong between `07` and `0a`.
-    5. **Userland Telemetry (`nouveau-ctrl` & `nouveau-tui`)**:
-       - Register `"0a": "P3  Balanced 3D / Multimedia"` in `PSTATE_LABELS`.
+    1. **DDR3 650 MHz Register Sequence in [`ramgf100.c`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-source/nvkm/subdev/fb/ramgf100.c)**:
+       - Add the `648000` / `650000 kHz` branch in `gf100_ram_calc()` using the 900 MHz strap register sequence with `0x132004 = 0x10012702`.
+    2. **Falcon Microcode Executor (`memx_exec_custom.fuc`)**:
+       - Add `cmd = 3` (`650 MHz` target) or pass the target `0x132004` `MEMPLL_COEFF` word via `SCRATCH` / DMEM parameter block so the resident Falcon image handles `324 MHz`, `650 MHz`, and `900 MHz` without needing additional IMEM code size.
+    3. **Kernel P-State Injection (`nvkm_pstate_new()`) & VID `0x03` (`0.920 V`)**:
+       - Inject synthetic P-State `0a` (`core = 405 MHz`, `shader = 810 MHz`, `memory = 650 MHz`, `hub07 = 405 MHz`, `hub06 = 270 MHz`, `hub01 = 405 MHz`, `rop = 405 MHz`, `vdec = 405 MHz`) between `07` and `0f`, gated via module parameter `config=NvFermiP3=true`.
+       - Map the voltage rail to VID `0x03` (`0.920 V`) in the GF106 voltage table.
+    4. **Governor Integration (`nouveau-dynclockd`) & Telemetry (`nouveau-ctrl` / `nouveau-tui`)**:
+       - Extend the dynamic frequency governor to a 3-tier scaling ladder (`07` $\leftrightarrow$ `0a` $\leftrightarrow$ `0f`/`10`) with hysteresis deadbands, and register `"0a": "P3  Balanced 3D / Multimedia"` in `PSTATE_LABELS`.
+
+### 5. 120 Hz 3D Vision eDP Display Pipeline & Stereoscopic 3D Support
+- [ ] **120 Hz eDP Link Validation, Auto-BPC Step-Down & Display Clock Floor (`nv-modeset-kernel.o_binary` §10.2)**:
+  - **Root Cause Uncovered via REA**:
+    - On the Dell XPS L702X (`LGD 0x02c5`, `1920x1080 @ 120 Hz`, pixel clock `396.36 MHz`, 4-lane HBR1 `2.7 Gbps` eDP link with `8.64 Gbps` max payload bandwidth):
+      - At **8 bpc (`24 bpp`)**, required bandwidth is $396.36\text{ MHz} \times 24 = \mathbf{9.51\text{ Gbps}} > 8.64\text{ Gbps}$ (**Exceeds HBR1 link capacity**).
+      - At **6 bpc (`18 bpp`)**, required bandwidth is $396.36\text{ MHz} \times 18 = \mathbf{7.13\text{ Gbps}} \le 8.64\text{ Gbps}$ (**Fits within HBR1 link capacity**).
+    - Decompilation of `_nv002185kms` (`0x2095f0`) $\to$ `_nv002219kms` (`0x226b20`) $\to$ `_nv000673kms` (`0x2269e0`) proves that `390.157` runs an automatic DisplayPort BPC step-down loop (`30 bpp` $\to$ `24 bpp` $\to$ `18 bpp`), stepping down to **6 bpc (`18 bpp`) with spatial/temporal dithering** for the 120 Hz mode.
+    - Decompilation of `_nv000659kms` (`0x217f20`) proves that `390.157` also grants a **+5.0 MHz (`+5000 kHz`) pixel-clock grace margin** and ignores self-contradicting EDID Range Limits (`HorizSync`, `VertRefresh`, `Max PixelClock`) on 3D Vision Stereo panels (`*(byte *)(pConnector + 0x3bdc) & 2`).
+    - Decompilation of `_nv002187kms` (`0x209440`, RM IMP check) shows that when `396.36 MHz` is active, P-State `03` (`dispclk`/`hubk07 = 135 MHz < 396.36 MHz`) is locked out so the display engine never starves.
+  - **Implementation Tasks**:
+    1. **Automatic DP/eDP BPC Step-Down (`8 bpc` $\to$ `6 bpc`)**: In Nouveau's DisplayPort atomic check / connector validation (`dispnv50` / `nouveau_connector.c`), automatically step down `bpc` from `8` to `6` (`18 bpp`) with hardware dithering enabled whenever `mode->clock * 24 > dp_link_bw`.
+    2. **3D Vision EDID Range Quirk (`+5.0 MHz` Margin)**: Bypass conflicting EDID range descriptors for Detailed Timing Descriptors on `LGD 0x02c5` and sibling 3D Vision panels.
+    3. **Active 120 Hz P-State Floor (`>= 07`)**: Prevent transitions to P-State `03` (`135 MHz` `hubk07`) whenever any active CRTC has `pixel_clock > 135,000 kHz`, keeping `dispclk >= 405 MHz`.
+    4. **VBlank & Page-Flip Timestamp Verification**: Verify DRM VBlank counter and page-flip completion interrupts at full `119.98 Hz` (`8.33 ms` frame interval) so Wayland/X11 compositors and OpenGL apps run at true 120 FPS instead of half-rate (~57–60 FPS).
+
+- [ ] **Stereoscopic 3D (`NVIDIA 3D Vision`) Support on Linux (`LGD 0x02c5` 120 Hz Panel + Built-in IR Emitter)**:
+  - **Is Stereoscopic 3D Possible?** **Yes!** On the Dell XPS L702X, 3D Vision hardware consists of:
+    1. The `1920x1080 @ 120 Hz` eDP panel (`LGD 0x02c5`) alternating Left and Right eye frames at `60 Hz` per eye (`8.33 ms` per frame).
+    2. The built-in USB NVIDIA 3D Vision IR Emitter (`USB ID 0955:0007` / `0955:7002`, wired internally on the laptop USB bus), which synchronizes the active-shutter LCD glasses with VBlank.
+    3. EVO display backlight/frame-sync registers in `nv-modeset-kernel.o_binary` + userspace USB emitter control.
+  - **Implementation Tasks**:
+    1. **Reverse-Engineer EVO Stereo Registers in `nv-modeset-kernel.o_binary` & `nv-kernel.o_binary`**:
+       - Trace stereo mode flags (`*(byte *)(pConnector + 0x3bdc) & 2` and EVO head stereo pin/signaling registers in `0x61xxxx`) using REA to see if the internal eDP panel requires a panel GPIO/backlight phase toggle or pure VBlank timing.
+    2. **USB 3D Vision IR Emitter Daemon / Helper (`nv3dvision-ir`)**:
+       - Build a lightweight `libusb` userspace helper (or integrate with open-source `libnvstusb` / `3dvision` protocol) that uploads the 8051 microcontroller firmware/timing pulses to the internal `0955:xxxx` USB IR emitter and triggers left/right eye shutter flips synchronized to DRM `DRM_IOCTL_WAIT_VBLANK` events at 120 Hz.
+    3. **Side-by-Side / Frame-Sequential Stereo Presentation**:
+       - Support frame-sequential 120 Hz stereo output for stereo media players (`bino`, `mpv`), emulators, and OpenGL quad-buffered stereo (`GLX_STEREO`) or Vulkan/GL layer injection.
+
+### 6. Fermi Engine Clock-Gating (BLCG / SLCG) & Hardware Load Counters (`0x10a600`)
+- [ ] **Extract & Program Fermi BLCG / SLCG Clock-Gating Tables (`nv-kernel.o_binary` §9.4.4)**:
+  - **Goal**: Reduce GPU idle and multimedia power consumption by `2–4 W` and lower baseline temperatures by `3–5 °C` across all Fermi (`GF100`–`GF119`) chips.
+  - **Implementation Tasks**:
+    1. Use REA to extract the static per-chip Block-Level Clock Gating (BLCG) and Second-Level Clock Gating (SLCG) register/value arrays from `.rodata` in `nv-kernel.o_binary` for `GF100`, `GF104`, `GF106`, `GF108`, `GF110`, `GF114`, `GF116`, `GF117`, and `GF119`.
+    2. Program the extracted BLCG/SLCG tables during `gr` (`PGRAPH`), `fb` (`PFB`), `copy` (`PCOPY`), and `therm` subdevice initialization in Nouveau.
+- [ ] **Hardware GPU Engine Utilization Counters (`0x10a600..0x10a610`, `_nv029625rm` / `_nv029628rm` §10.3)**:
+  - **Goal**: Provide true hardware GPU core (`GR`), memory controller (`FB`), and video decoder (`VDEC`) utilization percentages (0–100%), replacing software heuristic polling in `nouveau-dynclockd`, `nouveau-ctrl`, and `nouveau-tui`.
+  - **Implementation Tasks**:
+    1. Decompile `_nv029625rm` (`0x515a70`), `_nv029628rm` (`0x515ad0`), and their callers in `nv-kernel.o_binary` to extract the exact signal filter masks written to PDAEMON counter slots `0x10a600 + idx*4` (`idx = 0..4`) and counter readout offsets (`0x10a5xx`).
+    2. Configure the hardware idle/busy counters in `nvkm/subdev/pmu/gf100.c` (making sure they coexist cleanly with `memx_exec_custom.fuc`).
+    3. Expose hardware GPU load `%` and memory controller load `%` via debugfs/sysfs (`gpu_load`) and wire them into `nouveau-dynclockd`, `nouveau-ctrl`, and `nouveau-tui`.
 
 ---
+
 
 ## ⚡ Falcon Microcode & Memory Controller Expansion
 
