@@ -12,8 +12,8 @@ We have provided an automated telemetry tool in this repository:
 
 1. Clone the repository (if you haven't already):
    ```bash
-   git clone https://github.com/Twilight0/nouveau-fermi-reclock-dkms.git
-   cd nouveau-fermi-reclock-dkms
+   git clone https://github.com/Twilight0/nouveau-dkms.git
+   cd nouveau-dkms
    ```
 
 2. Run the diagnostic tool with root privileges (required to read debugfs and VBIOS nodes):
@@ -30,7 +30,7 @@ We have provided an automated telemetry tool in this repository:
 
 ## 📝 Submitting Your Hardware Report
 
-1. Open a new issue using the **[Hardware Telemetry Report](https://github.com/Twilight0/nouveau-fermi-reclock-dkms/issues/new?template=hardware-telemetry.md)** template.
+1. Open a new issue using the **[Hardware Telemetry Report](https://github.com/Twilight0/nouveau-dkms/issues/new?template=hardware-telemetry.md)** template.
 2. Paste the contents of `nouveau_fermi_diag_report.md` into the issue description.
 3. Include any notes on:
    - Laptop / Desktop model (e.g. *ASUS G73SW, Alienware M17x, MSI GT683R, Desktop GTX 560 Ti*).

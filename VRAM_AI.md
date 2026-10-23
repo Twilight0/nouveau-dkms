@@ -18,7 +18,7 @@ This document is the unified reference and implementation specification for **Op
 
 ## 1. Hardware Compute & Memory Foundation (`GF106M` / GT 555M 3 GB)
 
-With `nouveau-fermi-reclock` (`v2.1.0+`) active on the Dell XPS L702X (`10de:0dcd`), the GeForce GT 555M provides compute and memory resources that significantly outpace the host 2nd-Gen Intel Core i7-2630QM CPU's DDR3-1333 memory controller:
+With `nouveau` (`v2.1.0+`) active on the Dell XPS L702X (`10de:0dcd`), the GeForce GT 555M provides compute and memory resources that significantly outpace the host 2nd-Gen Intel Core i7-2630QM CPU's DDR3-1333 memory controller:
 
 | Resource | Hardware Specification | Value for AI Inference & Memory Pooling |
 | :--- | :--- | :--- |
@@ -205,6 +205,6 @@ flowchart TD
 - [ ] **Phase 2 — Mode A: Unified `VRAM + GART` Oversubscription for AI**:
   - Enable seamless `TTM_PL_VRAM | TTM_PL_TT` fallback for compute buffer objects in `nouveau_bo.c` so `> 3 GiB` models spill over into `8.0 GB/s` PCIe Gen2 pinned system RAM without `ENOMEM`.
 - [ ] **Phase 3 — Mode B: `/dev/nvram0` `PCOPY` DMA Block Device (`NvVramSwap`)**:
-  - Implement optional `NvVramSwap=<MiB>` module parameter creating `/dev/nvram0` backed by upper VRAM (`TTM_PL_VRAM`) and `PCOPY1` (`0x105000`) async DMA, with [`nouveau-ctrl`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-ctrl) / [`nouveau-tui`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-tui) telemetry and dynamic balloon eviction.
+  - Implement optional `NvVramSwap=<MiB>` module parameter creating `/dev/nvram0` backed by upper VRAM (`TTM_PL_VRAM`) and `PCOPY1` (`0x105000`) async DMA, with [`nouveau-ctrl`](file:///home/twilight/Projects/nouveau-dkms/nouveau-ctrl) / [`nouveau-tui`](file:///home/twilight/Projects/nouveau-dkms/nouveau-tui) telemetry and dynamic balloon eviction.
 - [ ] **Phase 4 — GPU-Accelerated `nvzram` (`PCOPY` + `NVC0_COMPUTE` Warp-LZ4)**:
   - Add batched `SM20` Warp-LZ4 compute compression in VRAM (`4 MiB` staging ring → `2.5 GiB` upper-VRAM `zpool`, storing `~6.0–7.5 GiB` of compressed system RAM) paired with adaptive compressed-DMA single-page `swapin`.

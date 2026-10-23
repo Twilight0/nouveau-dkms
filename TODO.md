@@ -1,6 +1,6 @@
 # 📋 Roadmap & TODO (`TODO.md`)
 
-This document tracks completed milestones, open engineering tasks, and the multi-architecture roadmap for **`nouveau-reclocking-dkms`** (currently packaged as `nouveau-fermi-reclock-dkms`).
+This document tracks completed milestones, open engineering tasks, and the multi-architecture roadmap for **`nouveau-reclocking-dkms`** (currently packaged as `nouveau-dkms`).
 
 ### Documentation Map
 - **[`RECLOCKING_NOTES.md`](RECLOCKING_NOTES.md)**: Hardware register tables, Falcon microcode architecture, and decompiled NVIDIA `390.157` (`nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`) specifications.
@@ -40,7 +40,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
   - Verified automatic PCIe link speed switching between **Gen1 (`2.5 GT/s x16`)** in `03`/`07` and **Gen2 (`5.0 GT/s x16`, `8.0 GB/s`)** in `0f`/`10` (`0x02241c` / `0x088460` / `0x088088`).
 - [x] **`v2.1.0` — Kernel `6.18.55` DRM Rebase, Live TTM VRAM Telemetry, Battery Cap & Initial VBlank Wait**:
   - Added `LINUX_VERSION_CODE`-guarded compatibility for the 1-argument `drm_client_dev_suspend()` / `drm_client_dev_resume()` API introduced in Linux `6.18.55` (`nouveau_display.c`).
-  - Added exact in-kernel TTM VRAM accounting (`VRAM: <used> MiB / <total> MiB used` on debugfs `pstate`) and unprivileged `/run/nouveau-fermi-reclock/vram` snapshot for `nouveau-ctrl` and `nouveau-tui`.
+  - Added exact in-kernel TTM VRAM accounting (`VRAM: <used> MiB / <total> MiB used` on debugfs `pstate`) and unprivileged `/run/nouveau/vram` snapshot for `nouveau-ctrl` and `nouveau-tui`.
   - Added `BATTERY_CAP=true` AC/DC power-supply awareness to `nouveau-dynclockd` (capping to `07` on battery, allowing `0f`/`10` on AC).
   - Added initial host-side `gf100_ram_wait_vblank()` (`NvFermiVblankSync=1`).
 - [x] **Decompilation of `NVIDIA-Linux-x86_64-390.157` (`nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`)**:
@@ -113,8 +113,8 @@ This document tracks completed milestones, open engineering tasks, and the multi
   - Automatically clamp `IDLE_STATE` to `07` (`405 MHz` `dispclk`, `324 MHz` DDR3) when a `> 135 MHz` pixel-clock mode (120 Hz) is active, dropping to `03` only at 60 Hz or DPMS off.
 - [ ] **5-Tier Scaling Ladder (`03` ↔ `07` ↔ `0a` ↔ `0f` ↔ `10`) with Hold-Down Timers**:
   - Scale across all 5 states based on hardware `GR`/`FB`/`VDEC` load with `5–8 s` PowerMizer-style hold-down timers so brief loading screens never trigger mid-game memory reclocks.
-- [ ] **Manual Override Coordination (`/run/nouveau-fermi-reclock/mode`)**:
-  - Coordinate `nouveau-ctrl set <pstate>` and `nouveau-tui` with `nouveau-dynclockd` via `/run/nouveau-fermi-reclock/mode` (`locked:<pstate>` vs `auto`) so manual locks are not overwritten on the next daemon poll while retaining thermal runaway protection.
+- [ ] **Manual Override Coordination (`/run/nouveau/mode`)**:
+  - Coordinate `nouveau-ctrl set <pstate>` and `nouveau-tui` with `nouveau-dynclockd` via `/run/nouveau/mode` (`locked:<pstate>` vs `auto`) so manual locks are not overwritten on the next daemon poll while retaining thermal runaway protection.
 - [ ] **Event-Driven Wakeups & Per-Application Profiles (`/etc/nouveau-dynclockd.d/`)**:
   - Support netlink/udev power-supply events and per-app P-state rules (Steam/Proton → `0f`/`10`, MPV/VLC → `07`/`0a`, OBS → `0a`/`0f`).
 
@@ -167,8 +167,8 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
   - Consolidate `LINUX_VERSION_CODE` API wrappers (such as the `6.18.55` `drm_client_dev_suspend` shim landed in `v2.1.0` and upcoming `6.19+` DRM/TTM shifts) into a dedicated `nouveau_compat.h` header so a single codebase compiles cleanly across `6.12 LTS`, `6.18 LTS`, and mainline kernels.
 - [ ] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
   - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` against `linux-cachyos-lts`, `linux-cachyos`, Arch `linux`, and `linux-lts` headers, and runs `shellcheck` / `py_compile` on userspace scripts.
-- [ ] **Package Rename / Transition to `nouveau-reclocking-dkms`**:
-  - Transition package naming to `nouveau-reclocking-dkms` with `provides=('nouveau-fermi-reclock-dkms')` and `replaces=('nouveau-fermi-reclock-dkms')` as multi-architecture support lands.
+- [ ] **Package Rename / Transition (done: `nouveau-dkms`, was `nouveau-fermi-reclock-dkms`)**:
+  - `PKGBUILD` carries `provides=('nouveau-fermi-reclock-dkms')`, `conflicts=('nouveau-fermi-reclock-dkms' 'nouveau-fermi-reclock-cachyos-lts-v2')`, `replaces=('nouveau-fermi-reclock-dkms')` so the old AUR package and prebuilt upgrade cleanly.
 - [ ] **Cross-Distribution Packaging Pipeline (`.github/workflows/release-packages.yml`)**:
   1. **Arch Linux / AliveOS / CachyOS / Manjaro (`.pkg.tar.zst`)**: `PKGBUILD` + `.SRCINFO` + `pacman` hooks.
   2. **Debian / Ubuntu / Linux Mint / Pop!_OS (`.deb`)**: `debian/` packaging with `dh-dkms`, `dpkg-buildpackage`, and `update-initramfs -u` hooks.

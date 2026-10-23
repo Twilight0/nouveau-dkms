@@ -1,4 +1,4 @@
-# nouveau-fermi-reclock-dkms (`v2.1.0`)
+# nouveau-dkms (`v2.1.0`)
 
 Out-of-tree **Nouveau DKMS kernel module** and dynamic GPU frequency/power governor unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, and 120 Hz eDP display support on Linux `6.18+`—evolving into **`nouveau-reclocking-dkms`** for pre-`Nova` NVIDIA GPUs.
 
@@ -26,7 +26,7 @@ Out-of-tree **Nouveau DKMS kernel module** and dynamic GPU frequency/power gover
   - **Stage 2 (3D Games / Compute)**: Automatically boosts to `0f` (`590/1180/900 MHz @ 1.030 V`) when 3D or compute workloads launch.
   - **Battery & Thermal Protection**: Caps maximum P-state to `07` on DC battery power (`BATTERY_CAP=true` in `v2.1.0`) and throttles automatically if GPU temperature reaches `80 °C` (`5 °C` hysteresis), configurable via `/etc/nouveau-dynclockd.conf`.
 - **Live TTM VRAM Telemetry & Management Suite (`nouveau-ctrl` & `nouveau-tui`)**:
-  - In-kernel TTM VRAM accounting (`v2.1.0`) exposed to unprivileged users via `/run/nouveau-fermi-reclock/vram`, paired with Dell SMM fan RPM (`dell_smm_hwmon`), PCIe link telemetry, and colorized thermal zones in both the CLI (`nouveau-ctrl`) and interactive curses dashboard (`nouveau-tui`).
+  - In-kernel TTM VRAM accounting (`v2.1.0`) exposed to unprivileged users via `/run/nouveau/vram`, paired with Dell SMM fan RPM (`dell_smm_hwmon`), PCIe link telemetry, and colorized thermal zones in both the CLI (`nouveau-ctrl`) and interactive curses dashboard (`nouveau-tui`).
 
 ---
 
@@ -47,11 +47,11 @@ Out-of-tree **Nouveau DKMS kernel module** and dynamic GPU frequency/power gover
 ### Arch Linux / AliveOS / CachyOS / Manjaro
 ```bash
 # Install via AUR helper
-yay -S nouveau-fermi-reclock-dkms
+yay -S nouveau-dkms
 
 # Or build directly from source
-git clone https://github.com/Twilight0/nouveau-fermi-reclock-dkms.git
-cd nouveau-fermi-reclock-dkms
+git clone https://github.com/Twilight0/nouveau-dkms.git
+cd nouveau-dkms
 makepkg -si
 ```
 
@@ -80,7 +80,7 @@ nouveau-tui                          # Launch interactive curses dashboard
 nouveau.modeset=1 acpi_backlight=native video.allow_duplicates=1
 ```
 
-### Module Options (`/etc/modprobe.d/nouveau-fermi-reclock.conf`)
+### Module Options (`/etc/modprobe.d/nouveau.conf`)
 ```text
 # Default configuration (Memory reclocking + VBlank sync enabled)
 options nouveau modeset=1 vblank_continuous=1 NvFermiVblankSync=1 config=NvFermiMemReclock=true
@@ -124,7 +124,7 @@ Have a different Fermi, Kepler, or Maxwell GPU or laptop model? Run the standalo
 ```bash
 sudo python3 tools/nouveau-fermi-diag.py
 ```
-And submit your generated `nouveau_fermi_diag_report.md` via the [**Hardware Telemetry Issue Template**](https://github.com/Twilight0/nouveau-fermi-reclock-dkms/issues/new?template=hardware-telemetry.md). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
+And submit your generated `nouveau_fermi_diag_report.md` via the [**Hardware Telemetry Issue Template**](https://github.com/Twilight0/nouveau-dkms/issues/new?template=hardware-telemetry.md). See [`CONTRIBUTING.md`](CONTRIBUTING.md) for details.
 
 ---
 

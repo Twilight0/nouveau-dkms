@@ -1,6 +1,6 @@
 # 🌋 Vulkan on NVIDIA Fermi (`GF10x` / `GF11x`): Hardware Analysis & Implementation Roadmap
 
-This document details our architectural and reverse-engineering findings on why NVIDIA omitted Vulkan support for Fermi (`NV_C0`–`NV_D9`, GeForce 400/500/600M series) in the proprietary `390.157` driver, what hardware capabilities the Fermi silicon actually possesses, and the concrete technical pathways to bring **Vulkan 1.0 / 1.1** (and DirectX 9/10/11 gaming) to Fermi on Linux alongside **`nouveau-fermi-reclock`**.
+This document details our architectural and reverse-engineering findings on why NVIDIA omitted Vulkan support for Fermi (`NV_C0`–`NV_D9`, GeForce 400/500/600M series) in the proprietary `390.157` driver, what hardware capabilities the Fermi silicon actually possesses, and the concrete technical pathways to bring **Vulkan 1.0 / 1.1** (and DirectX 9/10/11 gaming) to Fermi on Linux alongside **`nouveau`**.
 
 ---
 
@@ -90,11 +90,11 @@ For running Windows games via Wine / Proton on the GT 555M (`GF106M`) today with
 
 ---
 
-## 5. Why `nouveau-fermi-reclock` Was the Missing Prerequisite for Everything Above
+## 5. Why `nouveau` Was the Missing Prerequisite for Everything Above
 
 Even with a native Vulkan driver or OpenGL 4.3, stock upstream Nouveau crippled Fermi GPUs in the kernel:
 
-| Hardware Bottleneck on Stock Nouveau | Impact on OpenGL 4.3 / Vulkan Workloads | Fixed by `nouveau-fermi-reclock` (`v2.0.1+`) |
+| Hardware Bottleneck on Stock Nouveau | Impact on OpenGL 4.3 / Vulkan Workloads | Fixed by `nouveau` (`v2.0.1+`) |
 |---|---|---|
 | **Memory Stuck at `324 MHz` (or `135 MHz`)** | Only `15.5 GB/s` bandwidth (with ~`1.9 GB/s` eaten by 120 Hz scanout), starving every shader & render target | ✅ **900 MHz DDR3 (`43.2 GB/s`)** via custom Falcon PMU executor (`2.78×` bandwidth) |
 | **Core/Shader Stuck at `202 / 405 MHz`** | `116 GFLOPS` FP32 (~29% of hardware capacity) | ✅ **590 / 1180 MHz (`0f`, `340 GFLOPS`)** and **700 / 1400 MHz (`10`, `403 GFLOPS`)** |

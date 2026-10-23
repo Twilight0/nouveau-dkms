@@ -134,7 +134,7 @@ These tools reside in user space. They can be distributed alongside the DKMS pac
   - Two-stage scaling (`03` ↔ `07` for 2D, `0f`/`10` for 3D), thermal protection (`80 °C`), and battery profile cap (`BATTERY_CAP=true`).
 - [ ] **`nouveau-dynclockd` 2.0 Modernization**:
   - Hardware counter sampling (`0x10a600`), 120 Hz idle floor (`>= 07`), 5-tier scaling ladder (`03` ↔ `07` ↔ `0a` ↔ `0f` ↔ `10`), and hold-down timers.
-  - Coordination with manual mode overrides via `/run/nouveau-fermi-reclock/mode`.
+  - Coordination with manual mode overrides via `/run/nouveau/mode`.
 
 ### 2. Management & Diagnostics
 - [x] **`nouveau-ctrl`**: Scriptable CLI for P-state locking, telemetry queries, and governor control.
@@ -202,7 +202,7 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 - [x] `nouveau-tui` curses interface with thermal coloring and fan RPM
 - [x] `nouveau-dynclockd` basic governor (2D/3D load scaling, thermal throttle, battery cap)
 - [ ] `nouveau-dynclockd` 2.0 (hardware counters, 120 Hz idle floor, 5-tier ladder, hold timers)
-- [ ] Governor mode lock coordination via `/run/nouveau-fermi-reclock/mode`
+- [ ] Governor mode lock coordination via `/run/nouveau/mode`
 - [ ] `nv3dvision-ir` USB emitter synchronization daemon (`0955:0007`)
 - [ ] `nouveau-extract-fw` PureVideo HD / MSENC firmware extraction script
 - [ ] Cross-distribution release packaging (`.deb`, `.rpm`, Gentoo, NixOS, Makefile)

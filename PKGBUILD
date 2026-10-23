@@ -1,19 +1,21 @@
 # Maintainer: Twilight0 <https://github.com/Twilight0>
-pkgname=nouveau-fermi-reclock-dkms
-_pkgname=nouveau-fermi-reclock
+pkgname=nouveau-dkms
 pkgver=2.1.0
 pkgrel=1
 pkgdesc="Unified Nouveau out-of-tree module with Fermi core, shader, and DDR3 memory reclocking (DKMS)"
 arch=('x86_64')
-url="https://github.com/Twilight0/nouveau-fermi-reclock-dkms"
+url="https://github.com/Twilight0/nouveau-dkms"
 license=('GPL-2.0-only')
 depends=('dkms' 'python')
+provides=('nouveau-fermi-reclock-dkms')
+conflicts=('nouveau-fermi-reclock-dkms' 'nouveau-fermi-reclock-cachyos-lts-v2')
+replaces=('nouveau-fermi-reclock-dkms')
 backup=('etc/nouveau-dynclockd.conf')
 source=(
-  "https://github.com/Twilight0/nouveau-fermi-reclock-dkms/releases/download/v${pkgver}/nouveau-source.tar.gz"
-  "nouveau-fermi-reclock.patch"
+  "https://github.com/Twilight0/nouveau-dkms/releases/download/v${pkgver}/nouveau-source.tar.gz"
+  "nouveau.patch"
   "dkms.conf"
-  "nouveau-fermi-reclock.conf"
+  "nouveau.conf"
   "nouveau-dynclockd.conf"
   "nouveau-dynclockd.py"
   "nouveau-dynclockd.service"
@@ -21,25 +23,25 @@ source=(
   "nouveau-tui"
 )
 sha256sums=('1426cea7f5c4959cfcaec78b4974cde3071f51eb9fdf9beedf38efae0bc6b9ad'
-            '72c6e0a313bb994d48fef2053636f2819787b85d61710436e4b2368c8b400759'
-            'f2876f7cc04ca907063832488f5f8488bd61d49e18886001bd87e545e53381a0'
-            '80fd6268f03730c053c56ac67d9dfea450ac88e93b83aa60914d47dc218e4b97'
+            'efcf76af97471e399b2f048a1bb7545b5d8d5da9027d89f569fedfc73bcce842'
+            'a11605844d840a0f701bfd45b0f9e200192b860be7c37e4390b86dd4a7938906'
+            '326efac21bf858f7be0e41b21f2c585bfd1ef5b18dad9cce022685a4623bb090'
             'a28abe29db225765c93c03b02aec60ac6db4ad59826689fcad92e59d5ec8d69b'
-            'e11287593184e6f0677ae14120b0392f23b3a70aaa20d737ef1bea4b6d6b5641'
+            '2b8d254d3f0f341890e22898d59f787f79044e5728fae75bc2e9731e18292ff6'
             '87f698b1de37689cb3889bfae916ceaba1caca634ab6a653b1602bda613b20e4'
-            'fb3708ba720b69f4bca302c1262b1bf14d0e310827c8fed078f37b771efa37de'
-            '70822e3d4b126e731861584149819bf3adfbe44ea29eb109ca68b0b8911270e2')
+            'd69c3ff716892b2eb22cf2b8494f15117c1d85efcf0f03d3159b49c69916a294'
+            'b868f1e1688c36e67cdff0bcb753cce891ed165c6a4b3811f3dc37d633bc1dc0')
 
 prepare() {
   msg2 "Applying Fermi reclocking and 120Hz display patches..."
-  patch -Np1 -d "${srcdir}/nouveau-source" < "${srcdir}/nouveau-fermi-reclock.patch"
+  patch -Np1 -d "${srcdir}/nouveau-source" < "${srcdir}/nouveau.patch"
 
   # Replace @PKGVER@ in dkms.conf
   sed "s/@PKGVER@/${pkgver}/g" -i "${srcdir}/dkms.conf"
 }
 
 package() {
-  local destdir="${pkgdir}/usr/src/${_pkgname}-${pkgver}"
+  local destdir="${pkgdir}/usr/src/${pkgname}-${pkgver}"
   install -d "${destdir}"
   
   # Copy pre-patched sources directly to the DKMS build directory
@@ -49,7 +51,7 @@ package() {
   install -Dm644 "${srcdir}/dkms.conf" "${destdir}/dkms.conf"
 
   # Install default modprobe configuration
-  install -Dm644 "${srcdir}/nouveau-fermi-reclock.conf" "${pkgdir}/usr/lib/modprobe.d/nouveau-fermi-reclock.conf"
+  install -Dm644 "${srcdir}/nouveau.conf" "${pkgdir}/usr/lib/modprobe.d/nouveau.conf"
 
   # Install daemon configuration
   install -Dm644 "${srcdir}/nouveau-dynclockd.conf" "${pkgdir}/etc/nouveau-dynclockd.conf"

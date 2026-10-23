@@ -1,6 +1,6 @@
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/dispnv50/disp.c nouveau-source/dispnv50/disp.c
---- nouveau-orig/dispnv50/disp.c	2026-09-19 09:19:27.856133967 +0300
-+++ nouveau-source/dispnv50/disp.c	2026-09-19 09:17:27.351762287 +0300
+--- nouveau-orig/dispnv50/disp.c
++++ nouveau-source/dispnv50/disp.c
 @@ -228,6 +228,10 @@ MODULE_PARM_DESC(kms_vram_pushbuf, "Plac
  static int nv50_dmac_vram_pushbuf = -1;
  module_param_named(kms_vram_pushbuf, nv50_dmac_vram_pushbuf, int, 0400);
@@ -32,8 +32,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	nv50_audio_component_init(drm);
  
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nouveau_backlight.c nouveau-source/nouveau_backlight.c
---- nouveau-orig/nouveau_backlight.c	2026-09-19 09:19:27.912134139 +0300
-+++ nouveau-source/nouveau_backlight.c	2026-09-19 09:17:27.354650203 +0300
+--- nouveau-orig/nouveau_backlight.c
++++ nouveau-source/nouveau_backlight.c
 @@ -344,10 +344,7 @@ nouveau_backlight_init(struct drm_connec
  		goto fail_alloc;
  	}
@@ -47,8 +47,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	if (!nouveau_get_backlight_name(backlight_name, bl)) {
  		NV_ERROR(drm, "Failed to retrieve a unique name for the backlight interface\n");
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/clk/base.c nouveau-source/nvkm/subdev/clk/base.c
---- nouveau-orig/nvkm/subdev/clk/base.c	2026-09-19 09:19:27.966983231 +0300
-+++ nouveau-source/nvkm/subdev/clk/base.c	2026-09-19 10:36:52.331364190 +0300
+--- nouveau-orig/nvkm/subdev/clk/base.c
++++ nouveau-source/nvkm/subdev/clk/base.c
 @@ -29,6 +29,7 @@
  #include <subdev/bios/perf.h>
  #include <subdev/bios/vpstate.h>
@@ -97,16 +97,20 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	}
  
  	return nvkm_cstate_prog(clk, pstate, NVKM_CLK_CSTATE_HIGHEST);
-@@ -428,6 +447,8 @@ nvkm_pstate_new(struct nvkm_clk *clk, in
+@@ -428,6 +447,12 @@ nvkm_pstate_new(struct nvkm_clk *clk, in
  	pstate->pcie_width = perfE.pcie_width;
  	cstate = &pstate->base;
  	cstate->voltage = perfE.voltage;
-+	if (pstate->pstate == 0x0f)
++	/* Class A (universal boards): trust VBIOS voltage first. GF106M
++	 * L702X VBIOS undervolts 0f (862.5 mV vs factory 1.030 V VID 0x01),
++	 * so raise to 0x67 only when VBIOS asks for less. Other boards
++	 * (e.g. GF119M 410M) keep their own factory VID untouched. */
++	if (pstate->pstate == 0x0f && perfE.voltage < 0x67)
 +		cstate->voltage = 0x67;
  	cstate->domain[nv_clk_src_core] = perfE.core;
  	cstate->domain[nv_clk_src_shader] = perfE.shader;
  	cstate->domain[nv_clk_src_mem] = perfE.memory;
-@@ -451,6 +472,9 @@ nvkm_pstate_new(struct nvkm_clk *clk, in
+@@ -451,6 +476,9 @@ nvkm_pstate_new(struct nvkm_clk *clk, in
  
  		cstate->domain[domain->name] = perfS.v40.freq;
  	}
@@ -116,23 +120,33 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  
  	data = nvbios_cstepEm(bios, pstate->pstate, &ver, &hdr, &cstepE);
  	if (data) {
-@@ -463,6 +487,25 @@ nvkm_pstate_new(struct nvkm_clk *clk, in
+@@ -463,6 +491,35 @@ nvkm_pstate_new(struct nvkm_clk *clk, in
  	nvkm_pstate_info(clk, pstate);
  	list_add_tail(&pstate->head, &clk->states);
  	clk->state_nr++;
 +
-+	/* Local OC pstate (5th, beyond BIOS max 0f) — gated by NvFermiOC */
++	/* Local OC pstate (beyond BIOS max 0f) — gated by NvFermiOC.
++	 * Class A: scale relative to the board's own 0f (+~18%, same ratio
++	 * as GF106M 590->700) instead of absolute 1400 MHz, so low-clock
++	 * boards (e.g. GF119M 410M 573 MHz -> ~676 MHz) stay safe. */
 +	if (pstate->pstate == 0x0f && nvkm_boolopt(clk->subdev.device->cfgopt, "NvFermiOC", false)) {
 +		struct nvkm_pstate *oc = kzalloc(sizeof(*oc), GFP_KERNEL);
 +		if (oc) {
++			u32 base_core, base_shader;
 +			INIT_LIST_HEAD(&oc->list);
 +			oc->pstate = 0x10;
 +			oc->fanspeed = pstate->fanspeed;
 +			oc->pcie_speed = pstate->pcie_speed;
 +			oc->pcie_width = pstate->pcie_width;
 +			oc->base = pstate->base;
-+			oc->base.domain[nv_clk_src_gpc] = 1400000;
-+			oc->base.domain[nv_clk_src_shader] = 1400000;
++			base_core = pstate->base.domain[nv_clk_src_gpc];
++			base_shader = pstate->base.domain[nv_clk_src_shader];
++			if (!base_core)
++				base_core = pstate->base.domain[nv_clk_src_core];
++			if (!base_shader)
++				base_shader = base_core * 2;
++			oc->base.domain[nv_clk_src_gpc] = base_core + base_core / 5;
++			oc->base.domain[nv_clk_src_shader] = base_shader + base_shader / 5;
 +			nvkm_pstate_info(clk, oc);
 +			list_add_tail(&oc->head, &clk->states);
 +			clk->state_nr++;
@@ -142,7 +156,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	return 0;
  }
  
-@@ -524,6 +567,7 @@ nvkm_clk_ustate(struct nvkm_clk *clk, in
+@@ -524,6 +581,7 @@ nvkm_clk_ustate(struct nvkm_clk *clk, in
  	if (ret >= 0) {
  		if (ret -= 2, pwr) clk->ustate_ac = ret;
  		else		   clk->ustate_dc = ret;
@@ -150,7 +164,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  		return nvkm_pstate_calc(clk, true);
  	}
  	return ret;
-@@ -555,6 +599,7 @@ nvkm_clk_dstate(struct nvkm_clk *clk, in
+@@ -555,6 +613,7 @@ nvkm_clk_dstate(struct nvkm_clk *clk, in
  	if ( rel) clk->dstate += rel;
  	clk->dstate = min(clk->dstate, clk->state_nr - 1);
  	clk->dstate = max(clk->dstate, 0);
@@ -158,7 +172,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	return nvkm_pstate_calc(clk, true);
  }
  
-@@ -590,6 +635,7 @@ static int
+@@ -590,6 +649,7 @@ static int
  nvkm_clk_init(struct nvkm_subdev *subdev)
  {
  	struct nvkm_clk *clk = nvkm_clk(subdev);
@@ -166,7 +180,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	const struct nvkm_domain *clock = clk->domains;
  	int ret;
  
-@@ -612,11 +658,40 @@ nvkm_clk_init(struct nvkm_subdev *subdev
+@@ -612,11 +672,40 @@ nvkm_clk_init(struct nvkm_subdev *subdev
  	if (clk->func->init)
  		return clk->func->init(clk);
  
@@ -208,8 +222,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  }
  
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/clk/gf100.c nouveau-source/nvkm/subdev/clk/gf100.c
---- nouveau-orig/nvkm/subdev/clk/gf100.c	2026-09-19 09:19:27.966983231 +0300
-+++ nouveau-source/nvkm/subdev/clk/gf100.c	2026-09-19 09:17:27.376762364 +0300
+--- nouveau-orig/nvkm/subdev/clk/gf100.c
++++ nouveau-source/nvkm/subdev/clk/gf100.c
 @@ -91,6 +91,9 @@ read_pll(struct gf100_clk *clk, u32 pll)
  		return 0;
  	}
@@ -294,8 +308,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +	return nvkm_clk_ctor(&gf100_clk, device, type, inst, true, &clk->base);
  }
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/fb/fexec_code.inc nouveau-source/nvkm/subdev/fb/fexec_code.inc
---- nouveau-orig/nvkm/subdev/fb/fexec_code.inc	1970-01-01 02:00:00.000000000 +0200
-+++ nouveau-source/nvkm/subdev/fb/fexec_code.inc	2026-09-19 09:17:27.377865130 +0300
+--- nouveau-orig/nvkm/subdev/fb/fexec_code.inc
++++ nouveau-source/nvkm/subdev/fb/fexec_code.inc
 @@ -0,0 +1,243 @@
 +/* Native resident Falcon executor for Fermi GF106 DDR3 reclocking */
 +static const u32 fexec_code[] = {
@@ -541,8 +555,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +	0x00000000, 0x00000000, 0x00000000, 0x00000000,
 +};
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/fb/ramfuc.h nouveau-source/nvkm/subdev/fb/ramfuc.h
---- nouveau-orig/nvkm/subdev/fb/ramfuc.h	2026-09-19 09:19:27.973134327 +0300
-+++ nouveau-source/nvkm/subdev/fb/ramfuc.h	2026-09-19 09:17:27.378195373 +0300
+--- nouveau-orig/nvkm/subdev/fb/ramfuc.h
++++ nouveau-source/nvkm/subdev/fb/ramfuc.h
 @@ -4,10 +4,15 @@
  #include <subdev/fb.h>
  #include <subdev/pmu.h>
@@ -750,9 +764,28 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  
  #define ram_init(s,p)        ramfuc_init(&(s)->base, (p))
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/fb/ramgf100.c nouveau-source/nvkm/subdev/fb/ramgf100.c
---- nouveau-orig/nvkm/subdev/fb/ramgf100.c	2026-09-19 09:19:27.973134327 +0300
-+++ nouveau-source/nvkm/subdev/fb/ramgf100.c	2026-09-19 09:18:34.088968128 +0300
-@@ -123,6 +123,300 @@ gf100_ram_train(struct gf100_ramfuc *fuc
+--- nouveau-orig/nvkm/subdev/fb/ramgf100.c
++++ nouveau-source/nvkm/subdev/fb/ramgf100.c
+@@ -27,6 +27,7 @@
+ 
+ #include <core/option.h>
+ #include <subdev/bios.h>
++#include <subdev/bios/perf.h>
+ #include <subdev/bios/pll.h>
+ #include <subdev/bios/rammap.h>
+ #include <subdev/bios/timing.h>
+@@ -101,6 +102,10 @@ struct gf100_ram {
+ 	struct gf100_ramfuc fuc;
+ 	struct nvbios_pll refpll;
+ 	struct nvbios_pll mempll;
++	/* Class A: board's own DDR3 pair discovered from VBIOS pstates.
++	 * Zero = undiscovered, callers fall back to GF106M 324/900. */
++	u32 ddr3_lo;
++	u32 ddr3_hi;
+ };
+ 
+ static void
+@@ -123,6 +128,356 @@ gf100_ram_train(struct gf100_ramfuc *fuc
  	}
  }
  
@@ -811,6 +844,50 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +
 +static bool fexec_resident_running = false;
 +
++/* VBlank-aligned memory reclock (TODO: Zero-Pause Switching).
++ * Poll head scanline (NV50 rgpos 0x616340 + head*0x800) until inside
++ * vertical blanking (vline >= vblanks from 0x610af0 / vtotal 0x610af8).
++ * Best-effort: fail-open on timeout / display off / NvFermiVblankSync=0.
++ * The 5ms Falcon retraining cannot fit into the ~0.4ms 120Hz blanking,
++ * but starting at blanking onset confines the pause to blanking + top
++ * lines instead of mid-frame tear. */
++static void
++gf100_ram_wait_vblank(struct nvkm_device *device)
++{
++	struct nvkm_subdev *subdev;
++	unsigned long deadline;
++	int head;
++
++	if (!nvkm_boolopt(device->cfgopt, "NvFermiVblankSync", true))
++		return;
++	if (!device->disp || !device->fb)
++		return;
++	subdev = &device->fb->subdev;
++
++	for (head = 0; head < 2; head++) {
++		u32 vtotal, vblanks, vline;
++		u32 state_off = head * 0x540;
++		u32 rgpos_off = head * 0x800;
++
++		vblanks = (nvkm_rd32(device, 0x610af0 + state_off) >> 16) & 0xffff;
++		vtotal  = (nvkm_rd32(device, 0x610af8 + state_off) >> 16) & 0xffff;
++		if (vtotal == 0 || vblanks == 0 || vblanks >= vtotal)
++			continue;
++
++		deadline = jiffies + msecs_to_jiffies(50);
++		while (time_before(jiffies, deadline)) {
++			vline = nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff;
++			if (vline >= vblanks && vline < vtotal)
++				return;
++			usleep_range(200, 500);
++		}
++		nvkm_debug(subdev, "DDR3: vblank wait timeout on head %d (vline %u, blank %u-%u)\n",
++			   head, nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff,
++			   vblanks, vtotal);
++		return;
++	}
++}
++
 +static int
 +gf100_ram_exec_custom(struct gf100_ram *ram, u32 freq)
 +{
@@ -820,6 +897,10 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +	u32 done, cur, pmc, cmd;
 +
 +	cmd = (freq == 900000) ? 1 : 2;
++
++	/* Start retraining at vblank onset so the ~5ms pause lands on
++	 * blanking + top lines instead of mid-frame (best-effort). */
++	gf100_ram_wait_vblank(device);
 +
 +	/* Check if resident executor is already running and ready in Falcon IMEM */
 +	if (fexec_resident_running) {
@@ -1023,13 +1104,21 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +	struct nvkm_subdev *subdev = &ram->base.fb->subdev;
 +	struct nvkm_device *device = subdev->device;
 +	u32 cur = nvkm_clk_read(device->clk, nv_clk_src_mem);
++	u32 lo, hi;
 +
-+	/* State 03 requests 135 MHz in VBIOS: map to 324 MHz safe step-down */
++	/* Class A: accept any VBIOS memory clock, not just the GF106M pair.
++	 * lo/hi are discovered from the board's own pstate table at init
++	 * (gf100_ram_init); unknown boards fall back to the GF106M pair
++	 * until their script is captured (TODO Class B board registry).
++	 * The 135 MHz alias is GF106M state 03's boot request. */
 +	if (freq == 135000)
 +		freq = 324000;
 +
-+	if (freq != 324000 && freq != 900000) {
-+		nvkm_error(subdev, "DDR3: unsupported memory clock %u kHz\n", freq);
++	lo = ram->ddr3_lo ? ram->ddr3_lo : 324000;
++	hi = ram->ddr3_hi ? ram->ddr3_hi : 900000;
++	if (freq != lo && freq != hi) {
++		nvkm_error(subdev, "DDR3: unsupported memory clock %u kHz (board pair %u/%u)\n",
++			   freq, lo, hi);
 +		return -EINVAL;
 +	}
 +
@@ -1053,7 +1142,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  int
  gf100_ram_calc(struct nvkm_ram *base, u32 freq)
  {
-@@ -143,6 +437,9 @@ gf100_ram_calc(struct nvkm_ram *base, u3
+@@ -143,6 +498,9 @@ gf100_ram_calc(struct nvkm_ram *base, u3
  	int N1, M1, P;
  	int ret;
  
@@ -1063,7 +1152,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	/* lookup memory config data relevant to the target frequency */
  	rammap.data = nvbios_rammapEm(bios, freq / 1000, &ver, &rammap.size,
  				      &cnt, &ramcfg.size, &cfg);
-@@ -408,6 +705,22 @@ gf100_ram_prog(struct nvkm_ram *base)
+@@ -408,6 +766,22 @@ gf100_ram_prog(struct nvkm_ram *base)
  {
  	struct gf100_ram *ram = gf100_ram(base);
  	struct nvkm_device *device = ram->base.fb->subdev.device;
@@ -1086,17 +1175,74 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	ram_exec(&ram->fuc, nvkm_boolopt(device->cfgopt, "NvMemExec", true));
  	return 0;
  }
-@@ -438,6 +751,9 @@ gf100_ram_init(struct nvkm_ram *base)
+@@ -436,7 +810,65 @@ gf100_ram_init(struct nvkm_ram *base)
+ 	};
+ 	struct gf100_ram *ram = gf100_ram(base);
  	struct nvkm_device *device = ram->base.fb->subdev.device;
- 	int i;
- 
+-	int i;
++	struct nvkm_bios *bios = device->bios;
++	struct nvbios_perfE perfE;
++	u8 ver, hdr, cnt, size;
++	u32 data;
++	int i = 0, idx;
++	u32 mems[8];
++	int nmems = 0;
++
 +	/* Reset resident executor state across subdev reinit/resume */
 +	fexec_resident_running = false;
 +
++	/* Class A: discover the board's own DDR3 clock pair from the VBIOS
++	 * performance table (min + max memory clock). Boards like the GF119M
++	 * 410M report 405/800 here instead of our GF106M 324/900. */
++	if (ram->base.type == NVKM_RAM_TYPE_DDR3) {
++		do {
++			data = nvbios_perfEp(bios, i++, &ver, &hdr, &cnt,
++					     &size, &perfE);
++			if (!data || ver < 0x25 || ver >= 0x40 || size < 2)
++				break;
++			if (!perfE.memory)
++				continue;
++			for (idx = 0; idx < nmems; idx++) {
++				if (mems[idx] == perfE.memory)
++					break;
++			}
++			if (idx == nmems && nmems < 8)
++				mems[nmems++] = perfE.memory;
++		} while (data);
++		if (nmems >= 2) {
++			u32 lo = mems[0], hi = mems[0];
++			for (idx = 1; idx < nmems; idx++) {
++				if (mems[idx] < lo)
++					lo = mems[idx];
++				if (mems[idx] > hi)
++					hi = mems[idx];
++			}
++			/* Ignore the 135 MHz boot-request alias some VBIOS
++			 * list for the idle state; the driver maps it to lo. */
++			if (lo <= 135000 && nmems >= 2) {
++				lo = mems[0] == lo ? mems[1] : mems[0];
++				for (idx = 0; idx < nmems; idx++) {
++					if (mems[idx] > 135000 && mems[idx] < lo)
++						lo = mems[idx];
++				}
++			}
++			if (lo < hi) {
++				ram->ddr3_lo = lo;
++				ram->ddr3_hi = hi;
++				nvkm_debug(&ram->base.fb->subdev,
++					   "DDR3: board memory pair %u/%u kHz from VBIOS (%d states)\n",
++					   lo, hi, nmems);
++			}
++		}
++		if (!ram->ddr3_lo) {
++			nvkm_debug(&ram->base.fb->subdev,
++				   "DDR3: VBIOS pair undiscovered, using GF106M 324/900 fallback\n");
++		}
++	}
+ 
  	switch (ram->base.type) {
  	case NVKM_RAM_TYPE_GDDR5:
- 		break;
-@@ -650,6 +966,14 @@ gf100_ram_new_(const struct nvkm_ram_fun
+@@ -650,6 +1082,14 @@ gf100_ram_new_(const struct nvkm_ram_fun
  	ram->fuc.r_0x611200 = ramfuc_reg(0x611200);
  
  	ram->fuc.r_0x13d8f4 = ramfuc_reg(0x13d8f4);
@@ -1112,8 +1258,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  }
  
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/pmu/fuc/gf100.fuc3.h nouveau-source/nvkm/subdev/pmu/fuc/gf100.fuc3.h
---- nouveau-orig/nvkm/subdev/pmu/fuc/gf100.fuc3.h	2026-09-19 09:19:27.990906184 +0300
-+++ nouveau-source/nvkm/subdev/pmu/fuc/gf100.fuc3.h	2026-09-19 09:17:27.399762435 +0300
+--- nouveau-orig/nvkm/subdev/pmu/fuc/gf100.fuc3.h
++++ nouveau-source/nvkm/subdev/pmu/fuc/gf100.fuc3.h
 @@ -1260,7 +1260,7 @@ static uint32_t gf100_pmu_code[] = {
  	0xb8525413,
  	0x0bf406e1,
@@ -1139,8 +1285,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	0x17f100f8,
  	0x14b60080,
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/pmu/gt215.c nouveau-source/nvkm/subdev/pmu/gt215.c
---- nouveau-orig/nvkm/subdev/pmu/gt215.c	2026-09-19 09:19:27.991134383 +0300
-+++ nouveau-source/nvkm/subdev/pmu/gt215.c	2026-09-19 09:17:27.401762441 +0300
+--- nouveau-orig/nvkm/subdev/pmu/gt215.c
++++ nouveau-source/nvkm/subdev/pmu/gt215.c
 @@ -23,6 +23,7 @@
   */
  #include "priv.h"
@@ -1730,8 +1876,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  }
  
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/pmu/memx.c nouveau-source/nvkm/subdev/pmu/memx.c
---- nouveau-orig/nvkm/subdev/pmu/memx.c	2026-09-19 09:19:27.991134383 +0300
-+++ nouveau-source/nvkm/subdev/pmu/memx.c	2026-09-19 09:17:27.403762447 +0300
+--- nouveau-orig/nvkm/subdev/pmu/memx.c
++++ nouveau-source/nvkm/subdev/pmu/memx.c
 @@ -61,9 +61,11 @@ nvkm_memx_init(struct nvkm_pmu *pmu, str
  	memx->size = reply[1];
  
@@ -1758,9 +1904,9 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	/* call MEMX process to execute the script, and wait for reply */
  	if (exec) {
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nouveau_display.c nouveau-source/nouveau_display.c
---- nouveau-orig/nouveau_display.c	2026-06-12 01:03:26.000000000 +0300
-+++ nouveau-source/nouveau_display.c	2026-10-04 00:00:00.000000000 +0300
-@@ -27,6 +27,7 @@
+--- nouveau-orig/nouveau_display.c
++++ nouveau-source/nouveau_display.c
+@@ -25,6 +25,7 @@
   */
  
  #include <acpi/video.h>
@@ -1780,7 +1926,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  
  	if (drm_drv_uses_atomic_modeset(dev)) {
  		if (!runtime) {
-@@ -795,5 +800,9 @@ nouveau_display_resume(struct drm_device
+@@ -795,7 +800,11 @@ nouveau_display_resume(struct drm_device
  		}
  	}
  
@@ -1790,71 +1936,8 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	drm_client_dev_resume(dev, false);
 +#endif
  }
-diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nvkm/subdev/fb/ramgf100.c nouveau-source/nvkm/subdev/fb/ramgf100.c
---- nouveau-orig/nvkm/subdev/fb/ramgf100.c
-+++ nouveau-source/nvkm/subdev/fb/ramgf100.c
-@@ -178,6 +178,50 @@
  
- static bool fexec_resident_running = false;
- 
-+/* VBlank-aligned memory reclock (TODO: Zero-Pause Switching).
-+ * Poll head scanline (NV50 rgpos 0x616340 + head*0x800) until inside
-+ * vertical blanking (vline >= vblanks from 0x610af0 / vtotal 0x610af8).
-+ * Best-effort: fail-open on timeout / display off / NvFermiVblankSync=0.
-+ * The 5ms Falcon retraining cannot fit into the ~0.4ms 120Hz blanking,
-+ * but starting at blanking onset confines the pause to blanking + top
-+ * lines instead of mid-frame tear. */
-+static void
-+gf100_ram_wait_vblank(struct nvkm_device *device)
-+{
-+	struct nvkm_subdev *subdev;
-+	unsigned long deadline;
-+	int head;
-+
-+	if (!nvkm_boolopt(device->cfgopt, "NvFermiVblankSync", true))
-+		return;
-+	if (!device->disp || !device->fb)
-+		return;
-+	subdev = &device->fb->subdev;
-+
-+	for (head = 0; head < 2; head++) {
-+		u32 vtotal, vblanks, vline;
-+		u32 state_off = head * 0x540;
-+		u32 rgpos_off = head * 0x800;
-+
-+		vblanks = (nvkm_rd32(device, 0x610af0 + state_off) >> 16) & 0xffff;
-+		vtotal  = (nvkm_rd32(device, 0x610af8 + state_off) >> 16) & 0xffff;
-+		if (vtotal == 0 || vblanks == 0 || vblanks >= vtotal)
-+			continue;
-+
-+		deadline = jiffies + msecs_to_jiffies(50);
-+		while (time_before(jiffies, deadline)) {
-+			vline = nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff;
-+			if (vline >= vblanks && vline < vtotal)
-+				return;
-+			usleep_range(200, 500);
-+		}
-+		nvkm_debug(subdev, "DDR3: vblank wait timeout on head %d (vline %u, blank %u-%u)\n",
-+			   head, nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff,
-+			   vblanks, vtotal);
-+		return;
-+	}
-+}
-+
- static int
- gf100_ram_exec_custom(struct gf100_ram *ram, u32 freq)
- {
-@@ -188,6 +232,10 @@
- 
- 	cmd = (freq == 900000) ? 1 : 2;
- 
-+	/* Start retraining at vblank onset so the ~5ms pause lands on
-+	 * blanking + top lines instead of mid-frame (best-effort). */
-+	gf100_ram_wait_vblank(device);
-+
- 	/* Check if resident executor is already running and ready in Falcon IMEM */
- 	if (fexec_resident_running) {
- 		u32 s0 = nvkm_rd32(device, 0x10a080);
+ int
 diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x '*.mod.c' -x '*.mod' -x '.*' -x ramgf100.c.probe.inc -x '*.orig' -x '*.rej' -x '*.inc.orig' -x '*.fuc' -x '*.bin' nouveau-orig/nouveau_debugfs.c nouveau-source/nouveau_debugfs.c
 --- nouveau-orig/nouveau_debugfs.c
 +++ nouveau-source/nouveau_debugfs.c
@@ -1867,7 +1950,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  #include <nvif/class.h>
  #include <nvif/if0001.h>
  #include "nouveau_debugfs.h"
-@@ -135,6 +137,23 @@
+@@ -135,6 +137,23 @@ nouveau_debugfs_pstate_get(struct seq_fi
  		seq_putc(m, '\n');
  	}
  

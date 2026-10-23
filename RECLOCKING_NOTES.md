@@ -7,7 +7,7 @@ This document is the unified hardware, kernel, and reverse-engineering reference
 ## Table of Contents
 1. [Hardware & System Specifications](#1-hardware--system-specifications)
 2. [Executive Summary & Component Status (`v2.1.0`)](#2-executive-summary--component-status-v210)
-3. [Nouveau Fermi Reclocking Architecture & Bug Fixes](#3-nouveau-fermi-reclocking-architecture--bug-fixes)
+3. [Nouveau Reclocking Architecture & Bug Fixes](#3-nouveau-reclocking-architecture--bug-fixes)
 4. [DDR3 Memory Reclocking Reverse Engineering (`mmiotrace` & Falcon Chronicles)](#4-ddr3-memory-reclocking-reverse-engineering-proprietary-trace)
 5. [Display Engine & 120 Hz Investigation](#5-display-engine--120-hz-investigation)
 6. [Performance Benchmark Summary](#6-performance-benchmark-summary)
@@ -50,14 +50,14 @@ This document is the unified hardware, kernel, and reverse-engineering reference
 | **Bidirectional DDR3 Memory Reclocking (`324` ↔ `900 MHz`)** | ✅ **Working (`v2.0.0+`)** | Custom resident Falcon microcode executor (`memx_exec_custom.fuc`) + hardware PHY latch (`0x001548 = 0x80000101`) + PMU clock domain protection (`0x0c`). See §8.3. |
 | **S3 Suspend/Resume Recovery** | ✅ **Working (`v2.0.1+`)** | Hardware signature check (`SCRATCH0 == 0xE1EC0001`) detects cleared Falcon IMEM on wake and self-heals via cold bootstrap without timeout. See §8.4. |
 | **Dynamic PCIe Gen1 ↔ Gen2 Scaling** | ✅ **Working (`v2.0.1+`)** | Automatically scales between PCIe Gen1 (`2.5 GT/s x16`) in `03`/`07` and Gen2 (`5.0 GT/s x16`, `8.0 GB/s`) in `0f`/`10`. See §8.4. |
-| **Live TTM VRAM Telemetry & Battery Cap** | ✅ **Working (`v2.1.0+`)** | Exact TTM `VRAM:` readout in debugfs + `/run/nouveau-fermi-reclock/vram` snapshot and `BATTERY_CAP` AC/DC profile awareness. |
+| **Live TTM VRAM Telemetry & Battery Cap** | ✅ **Working (`v2.1.0+`)** | Exact TTM `VRAM:` readout in debugfs + `/run/nouveau/vram` snapshot and `BATTERY_CAP` AC/DC profile awareness. |
 | **Zero-Flash VBlank Memory Reclocking** | 📋 **Root Cause Solved (§10.4)** | Host-side `gf100_ram_wait_vblank()` landed in `v2.1.0`; full zero-flash requires moving `WAIT_VBLANK` inside `memx_exec_custom.fuc` + `ISOHUB` watermark boost (`_nv031916rm`). |
 | **Dynamic Clock Daemon (`nouveau-dynclockd`)** | ✅ **Working** | Automatically scales P-states (`03`/`07` ↔ `0f`) with thermal protection (`80 °C`) and battery cap. |
 | **Backlight & Fan RPM Telemetry** | ✅ **Working** | ACPI EC hotkey driver (`dell-xps-brightness-dkms`) and `dell_smm_hwmon` RPM monitoring in `nouveau-ctrl` / `nouveau-tui`. |
 
 ---
 
-## 3. Nouveau Fermi Reclocking Architecture & Bug Fixes
+## 3. Nouveau Reclocking Architecture & Bug Fixes
 
 ### 3.1 The Reclocking Execution Pipeline
 
@@ -866,7 +866,7 @@ The NVIDIA `390.157` legacy driver is the final official proprietary release sup
 
 | Principle | Rule |
 |---|---|
-| **Clean-Room Specification Split** | Static analysis via REA produces *hardware specifications* (register addresses, bitfields, state-machine ordering, timing formulas, and lookup tables) documented in `RECLOCKING_NOTES.md` with REA Evidence IDs. All kernel code in `nouveau-fermi-reclock.patch` is written from scratch against those specifications—never copied from decompiled Resource Manager (RM) C pseudocode. |
+| **Clean-Room Specification Split** | Static analysis via REA produces *hardware specifications* (register addresses, bitfields, state-machine ordering, timing formulas, and lookup tables) documented in `RECLOCKING_NOTES.md` with REA Evidence IDs. All kernel code in `nouveau.patch` is written from scratch against those specifications—never copied from decompiled Resource Manager (RM) C pseudocode. |
 | **No Firmware Redistribution** | Proprietary Falcon microcode blobs embedded in `nv-kernel.o_binary` must never be committed to git or packaged in AUR/AliveOS. Where hardware behavior can be implemented in our own clean `envyas` microcode (`memx_exec_custom.fuc`), we write original assembly; if an official image is ever required, it must be extracted locally from the user's `.run` archive at install time. |
 | **Static vs. Runtime Verification** | Static decompilation findings are treated as hypotheses until corroborated against `mmiotrace` captures (`demmio`) or live hardware telemetry on the target GPU. |
 | **Signed Firmware Wall (GM20x+)** | Maxwell 2 (`GM20x`) and Pascal (`GP10x`) enforce High-Security (HS) RSA-signed PMU/ACR firmware in hardware. Reverse engineering can document their P-state and thermal tables, but cannot unlock custom PMU reclocking without NVIDIA's signed images. |
@@ -1126,7 +1126,7 @@ Disassembling the FBPA (`0x10fxxx`) subsystem in `nv-kernel.o_binary` (`0x2ec530
 
 ---
 
-### 10.7 Direct Engineering Implications for `nouveau-fermi-reclock`
+### 10.7 Direct Engineering Implications for `nouveau`
 
 1. **Synthetic P-State `0a` (P3: `405 MHz` Core / `810 MHz` Shader / `648 MHz` DDR3 @ `0.920 V`) is Immediately Actionable**:
    - Because `648 MHz` (`648,000 kHz`) lies above both the `405 MHz` (`0x62e08 kHz`)MEMPLL threshold and the `500 MHz` (`0x7a120 kHz`) high-frequency turnaround threshold in `_nv014883rm`, RM selects the **900 MHz VBIOS strap entry (`325–1000 MHz` range)** for all `0x10f290–0x10f2a0` JEDEC timings, `MR0/MR1/MR2` (`CL=13, CWL=9` — which is strictly conservative and rock-stable at `648 MHz` since fewer clock cycles elapse per nanosecond than at `900 MHz`!), and `0x10f440–0x10f468` drive strengths.
@@ -1145,9 +1145,9 @@ Disassembling the FBPA (`0x10fxxx`) subsystem in `nv-kernel.o_binary` (`0x2ec530
 
 ### 10.8 How `390.157` Handles Dynamic Reclocking (`PowerMizer`) vs. `nouveau-dynclockd`
 
-Comparing the proprietary driver's open glue (`kernel/nvidia/nv.c`) + Resource Manager (`nv-kernel.o_binary`) against our userspace daemon ([`nouveau-dynclockd.py`](file:///home/twilight/Projects/nouveau-fermi-reclock-dkms/nouveau-dynclockd.py)) reveals how each architecture decides *when* to switch P-states:
+Comparing the proprietary driver's open glue (`kernel/nvidia/nv.c`) + Resource Manager (`nv-kernel.o_binary`) against our userspace daemon ([`nouveau-dynclockd.py`](file:///home/twilight/Projects/nouveau-dkms/nouveau-dynclockd.py)) reveals how each architecture decides *when* to switch P-states:
 
-| Mechanism | Proprietary `390.157` (`PowerMizer` in `nv-kernel.o_binary`) | `nouveau-fermi-reclock` (`nouveau-dynclockd` + `nouveau.ko`) |
+| Mechanism | Proprietary `390.157` (`PowerMizer` in `nv-kernel.o_binary`) | `nouveau` (`nouveau-dynclockd` + `nouveau.ko`) |
 |---|---|---|
 | **Where the Governor Lives** | **In-kernel inside RM (`OBJPERF`)**, ticked once per second by the kernel timer `nvidia_rc_timer_callback()` $\to$ `rm_run_rc_callback()` (`1 Hz` periodic timer in `nv.c`) plus immediate event hooks on channel creation/pushbuffer kickoff. | **Userspace daemon (`nouveau-dynclockd.py`)** polling `/sys/kernel/debug/dri/*/clients`, `/proc/interrupts`, and `pstate` every `0.5–1.0 s` and writing target P-state IDs to debugfs `pstate`. |
 | **How GPU Load is Measured** | **Hardware PDAEMON Idle/Busy Counters (`0x10a600..0x10a610`)**: `_nv029625rm` (`0x515a70`) and `_nv029628rm` (`0x515ad0`) program 4 hardware signal filters in PDAEMON: <br>1. `GR` (3D/Compute engine busy cycles)<br>2. `FB` (Memory controller busy cycles)<br>3. `VDEC` (`MSPDEC`/`MSVLD`/`MSPPP` video decode busy cycles)<br>4. `PCIE` / Host FIFO activity.<br>Every `1 Hz` tick, RM reads elapsed busy cycles vs. reference clock cycles (`0x10a5xx`) to compute exact hardware `%` utilization. | **Software Activity Heuristics (Currently)**: Tracks active DRM render/X11/Wayland clients (`/sys/kernel/debug/dri/*/clients`) and Nouveau hardware interrupt deltas (`/proc/interrupts`). *(Planned upgrade in `TODO.md` §6: read the same `0x10a600..0x10a610` hardware counters!)* |

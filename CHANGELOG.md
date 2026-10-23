@@ -12,7 +12,7 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ### 📊 Live VRAM Telemetry (exact, not estimated)
 - **In-kernel accounting (`nouveau_debugfs.c`)**: new `VRAM: <used> MiB / <total> MiB used` line on the `pstate` node from the TTM VRAM manager (`ttm_resource_manager_usage`) and `ram_user`. Replaces the `gpuva` estimate, which stays empty on pre-UVMM Fermi.
-- **Unprivileged access without udev**: the governor (root) publishes `/run/nouveau-fermi-reclock/vram` (`0644`, 15 s freshness guard); `nouveau-ctrl status` and `nouveau-tui` prefer it, fall back to direct debugfs (root). Live-verified as user.
+- **Unprivileged access without udev**: the governor (root) publishes `/run/nouveau/vram` (`0644`, 15 s freshness guard); `nouveau-ctrl status` and `nouveau-tui` prefer it, fall back to direct debugfs (root). Live-verified as user.
 
 ### 🔋 Governor Battery Awareness
 - New `BATTERY_CAP=true` option (`/etc/nouveau-dynclockd.conf`): caps max state to `07` (P8) on DC power, matching proprietary `390.157`; full `0f` on AC. Power source shown in `status`/`tui`. Code-complete, field verification pending.

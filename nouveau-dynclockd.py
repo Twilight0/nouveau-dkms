@@ -19,7 +19,7 @@ import time
 CONFIG_PATH = "/etc/nouveau-dynclockd.conf"
 
 POWER_SUPPLY_BASE = "/sys/class/power_supply"
-SNAPSHOT_DIR = "/run/nouveau-fermi-reclock"
+SNAPSHOT_DIR = "/run/nouveau"
 VRAM_SNAPSHOT = os.path.join(SNAPSHOT_DIR, "vram")
 GPUVA_CANDIDATES = [
     "/sys/kernel/debug/dri/0/gpuva",

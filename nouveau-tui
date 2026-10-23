@@ -266,7 +266,7 @@ def get_vram_data():
     used_mib = None
     source = None
     try:
-        snap = "/run/nouveau-fermi-reclock/vram"
+        snap = "/run/nouveau/vram"
         if os.path.exists(snap) and (time.time() - os.path.getmtime(snap)) < 15:
             vals = {}
             with open(snap, "r") as f:
