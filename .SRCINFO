@@ -7,6 +7,7 @@ pkgbase = nouveau-dkms
 	license = GPL-2.0-only
 	depends = dkms
 	depends = python
+	provides = nouveau-dkms
 	provides = nouveau-fermi-reclock-dkms
 	conflicts = nouveau-fermi-reclock-dkms
 	conflicts = nouveau-fermi-reclock-cachyos-lts-v2
