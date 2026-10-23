@@ -8,7 +8,6 @@ pkgbase = nouveau-dkms
 	depends = dkms
 	depends = python
 	provides = nouveau-dkms
-	provides = nouveau-fermi-reclock-dkms
 	conflicts = nouveau-fermi-reclock-dkms
 	conflicts = nouveau-fermi-reclock-cachyos-lts-v2
 	replaces = nouveau-fermi-reclock-dkms
