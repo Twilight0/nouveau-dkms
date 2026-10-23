@@ -74,7 +74,7 @@ cp patches/patch-v1.2.0-baseline.patch tmp/nfr-testbuild/nouveau-fermi-reclock.p
 cd tmp/nfr-testbuild
 updpkgsums
 makepkg -C -f
-echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
 ```
 
 ---
@@ -105,7 +105,7 @@ cp patches/patch-v1.2.1-resident-executor.patch tmp/nfr-testbuild/nouveau-fermi-
 cd tmp/nfr-testbuild
 updpkgsums
 makepkg -C -f
-echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
 ```
 
 ---
@@ -135,7 +135,7 @@ cp patches/patch-v1.2.2-bidirectional-latch.patch tmp/nfr-testbuild/nouveau-ferm
 cd tmp/nfr-testbuild
 updpkgsums
 makepkg -C -f
-echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
 ```
 
 ---
@@ -167,7 +167,7 @@ cp patches/patch-v1.2.3-resident-bulletproof.patch tmp/nfr-testbuild/nouveau-fer
 cd tmp/nfr-testbuild
 updpkgsums
 makepkg -C -f
-echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
 ```
 
 ---
@@ -195,7 +195,7 @@ cp patches/patch-v1.2.4-pmu-clock-freeze.patch tmp/nfr-testbuild/nouveau-fermi-r
 cd tmp/nfr-testbuild
 updpkgsums
 makepkg -C -f
-echo  | sudo -S pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
+sudo pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.pkg.tar.zst
 ```
 
 ---
