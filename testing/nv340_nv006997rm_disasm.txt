@@ -1,0 +1,992 @@
+# _nv006997rm disassembly (340.108 nv-kernel.o, .text+0x2976b0, ~3.7KB)
+# Extracted 2026-10-26 via: objdump -d --start-address=0x2976b0 --stop-address=0x298550 <blob>
+# Function identified by string-xref to sddr3 link-training failure logs
+# ("Failed switching to lower mclk freq. in sddr3 link training", etc.)
+# Full write-order sequence + cross-blob analysis in RECLOCKING_NOTES.md §4.25
+#
+
+NVIDIA-Linux-x86_64-340.108/kernel/nv-kernel.o:     file format elf64-x86-64
+
+
+Disassembly of section .text:
+
+00000000002976b0 <_nv006997rm>:
+  2976b0:	41 57                	push   %r15
+  2976b2:	49 89 d7             	mov    %rdx,%r15
+  2976b5:	31 d2                	xor    %edx,%edx
+  2976b7:	41 56                	push   %r14
+  2976b9:	49 89 f6             	mov    %rsi,%r14
+  2976bc:	be 8d 00 00 00       	mov    $0x8d,%esi
+  2976c1:	41 55                	push   %r13
+  2976c3:	41 54                	push   %r12
+  2976c5:	49 89 fc             	mov    %rdi,%r12
+  2976c8:	53                   	push   %rbx
+  2976c9:	48 83 ed 60          	sub    $0x60,%rbp
+  2976cd:	48 89 cb             	mov    %rcx,%rbx
+  2976d0:	31 c9                	xor    %ecx,%ecx
+  2976d2:	41 ff 54 24 20       	call   *0x20(%r12)
+  2976d7:	4c 89 e7             	mov    %r12,%rdi
+  2976da:	48 89 45 50          	mov    %rax,0x50(%rbp)
+  2976de:	41 ff 94 24 98 1d 00 	call   *0x1d98(%r12)
+  2976e5:	00 
+  2976e6:	89 45 2c             	mov    %eax,0x2c(%rbp)
+  2976e9:	31 c0                	xor    %eax,%eax
+  2976eb:	41 83 be d4 18 00 00 	cmpl   $0x8,0x18d4(%r14)
+  2976f2:	08 
+  2976f3:	41 0f b6 96 5a 13 00 	movzbl 0x135a(%r14),%edx
+  2976fa:	00 
+  2976fb:	8b b3 a0 00 00 00    	mov    0xa0(%rbx),%esi
+  297701:	0f 94 c0             	sete   %al
+  297704:	85 f6                	test   %esi,%esi
+  297706:	89 45 28             	mov    %eax,0x28(%rbp)
+  297709:	41 0f b6 86 45 13 00 	movzbl 0x1345(%r14),%eax
+  297710:	00 
+  297711:	89 55 20             	mov    %edx,0x20(%rbp)
+  297714:	89 45 24             	mov    %eax,0x24(%rbp)
+  297717:	0f 84 f7 0d 00 00    	je     298514 <_nv006997rm+0xe64>
+  29771d:	31 c0                	xor    %eax,%eax
+  29771f:	49 83 be d8 18 00 00 	cmpq   $0x0,0x18d8(%r14)
+  297726:	00 
+  297727:	0f 84 36 09 00 00    	je     298063 <_nv006997rm+0x9b3>
+  29772d:	8b 4b 04             	mov    0x4(%rbx),%ecx
+  297730:	8b 43 0c             	mov    0xc(%rbx),%eax
+  297733:	8b 53 10             	mov    0x10(%rbx),%edx
+  297736:	89 4d 44             	mov    %ecx,0x44(%rbp)
+  297739:	8b 4b 14             	mov    0x14(%rbx),%ecx
+  29773c:	89 45 48             	mov    %eax,0x48(%rbp)
+  29773f:	8b 43 18             	mov    0x18(%rbx),%eax
+  297742:	89 55 4c             	mov    %edx,0x4c(%rbp)
+  297745:	89 4d 3c             	mov    %ecx,0x3c(%rbp)
+  297748:	8b 4d 24             	mov    0x24(%rbp),%ecx
+  29774b:	89 45 38             	mov    %eax,0x38(%rbp)
+  29774e:	85 c9                	test   %ecx,%ecx
+  297750:	0f 85 1b 09 00 00    	jne    298071 <_nv006997rm+0x9c1>
+  297756:	b9 00 0c 10 00       	mov    $0x100c00,%ecx
+  29775b:	31 d2                	xor    %edx,%edx
+  29775d:	31 f6                	xor    %esi,%esi
+  29775f:	4c 89 e7             	mov    %r12,%rdi
+  297762:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297769:	00 
+  29776a:	44 8b 6d 44          	mov    0x44(%rbp),%r13d
+  29776e:	45 31 c0             	xor    %r8d,%r8d
+  297771:	89 45 34             	mov    %eax,0x34(%rbp)
+  297774:	89 45 30             	mov    %eax,0x30(%rbp)
+  297777:	b9 0c f6 10 00       	mov    $0x10f60c,%ecx
+  29777c:	4c 89 e7             	mov    %r12,%rdi
+  29777f:	41 c1 ed 0c          	shr    $0xc,%r13d
+  297783:	41 83 e5 01          	and    $0x1,%r13d
+  297787:	f7 45 48 00 00 c0 00 	testl  $0xc00000,0x48(%rbp)
+  29778e:	41 0f 95 c0          	setne  %r8b
+  297792:	31 d2                	xor    %edx,%edx
+  297794:	31 f6                	xor    %esi,%esi
+  297796:	44 89 45 08          	mov    %r8d,0x8(%rbp)
+  29779a:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  2977a1:	00 
+  2977a2:	48 8b 55 50          	mov    0x50(%rbp),%rdx
+  2977a6:	89 45 14             	mov    %eax,0x14(%rbp)
+  2977a9:	89 45 18             	mov    %eax,0x18(%rbp)
+  2977ac:	44 8b 45 08          	mov    0x8(%rbp),%r8d
+  2977b0:	8b 82 f4 08 00 00    	mov    0x8f4(%rdx),%eax
+  2977b6:	3d cc 2a 75 00       	cmp    $0x752acc,%eax
+  2977bb:	0f 86 bf 08 00 00    	jbe    298080 <_nv006997rm+0x9d0>
+  2977c1:	f6 83 91 00 00 00 02 	testb  $0x2,0x91(%rbx)
+  2977c8:	0f 84 e8 09 00 00    	je     2981b6 <_nv006997rm+0xb06>
+  2977ce:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  2977d5:	81 4d 14 00 00 00 10 	orl    $0x10000000,0x14(%rbp)
+  2977dc:	41 b9 01 00 00 00    	mov    $0x1,%r9d
+  2977e2:	f7 c6 20 01 00 00    	test   $0x120,%esi
+  2977e8:	0f 85 b1 08 00 00    	jne    29809f <_nv006997rm+0x9ef>
+  2977ee:	66 90                	xchg   %ax,%ax
+  2977f0:	f7 c6 00 00 10 00    	test   $0x100000,%esi
+  2977f6:	74 30                	je     297828 <_nv006997rm+0x178>
+  2977f8:	8b 93 ec 00 00 00    	mov    0xec(%rbx),%edx
+  2977fe:	81 65 4c ff fc ff ff 	andl   $0xfffffcff,0x4c(%rbp)
+  297805:	83 e2 03             	and    $0x3,%edx
+  297808:	89 d0                	mov    %edx,%eax
+  29780a:	c1 e0 08             	shl    $0x8,%eax
+  29780d:	09 45 4c             	or     %eax,0x4c(%rbp)
+  297810:	8b 45 24             	mov    0x24(%rbp),%eax
+  297813:	85 c0                	test   %eax,%eax
+  297815:	0f 84 75 09 00 00    	je     298190 <_nv006997rm+0xae0>
+  29781b:	81 65 34 ff ff ff f9 	andl   $0xf9ffffff,0x34(%rbp)
+  297822:	c1 e2 19             	shl    $0x19,%edx
+  297825:	09 55 34             	or     %edx,0x34(%rbp)
+  297828:	66 85 f6             	test   %si,%si
+  29782b:	79 0e                	jns    29783b <_nv006997rm+0x18b>
+  29782d:	41 83 be d4 18 00 00 	cmpl   $0x3,0x18d4(%r14)
+  297834:	03 
+  297835:	0f 84 74 0a 00 00    	je     2982af <_nv006997rm+0xbff>
+  29783b:	f7 c6 00 00 00 01    	test   $0x1000000,%esi
+  297841:	74 32                	je     297875 <_nv006997rm+0x1c5>
+  297843:	f6 83 8e 00 00 00 40 	testb  $0x40,0x8e(%rbx)
+  29784a:	0f 85 30 0a 00 00    	jne    298280 <_nv006997rm+0xbd0>
+  297850:	8b 55 34             	mov    0x34(%rbp),%edx
+  297853:	8b 45 34             	mov    0x34(%rbp),%eax
+  297856:	81 65 4c ff ff ff 0f 	andl   $0xfffffff,0x4c(%rbp)
+  29785d:	81 e2 ff ff ff f7    	and    $0xf7ffffff,%edx
+  297863:	25 ff ff ff fb       	and    $0xfbffffff,%eax
+  297868:	44 8b 6d 24          	mov    0x24(%rbp),%r13d
+  29786c:	45 85 ed             	test   %r13d,%r13d
+  29786f:	0f 44 d0             	cmove  %eax,%edx
+  297872:	89 55 34             	mov    %edx,0x34(%rbp)
+  297875:	83 e6 04             	and    $0x4,%esi
+  297878:	74 56                	je     2978d0 <_nv006997rm+0x220>
+  29787a:	f6 83 8c 00 00 00 04 	testb  $0x4,0x8c(%rbx)
+  297881:	0f 84 ad 09 00 00    	je     298234 <_nv006997rm+0xb84>
+  297887:	44 8b 5d 28          	mov    0x28(%rbp),%r11d
+  29788b:	45 85 db             	test   %r11d,%r11d
+  29788e:	75 0e                	jne    29789e <_nv006997rm+0x1ee>
+  297890:	81 65 3c ff ff fc ff 	andl   $0xfffcffff,0x3c(%rbp)
+  297897:	81 4d 3c 00 00 02 00 	orl    $0x20000,0x3c(%rbp)
+  29789e:	41 8b 86 d4 18 00 00 	mov    0x18d4(%r14),%eax
+  2978a5:	83 f8 03             	cmp    $0x3,%eax
+  2978a8:	0f 94 c2             	sete   %dl
+  2978ab:	83 f8 07             	cmp    $0x7,%eax
+  2978ae:	0f 94 c0             	sete   %al
+  2978b1:	09 d0                	or     %edx,%eax
+  2978b3:	a8 01                	test   $0x1,%al
+  2978b5:	74 19                	je     2978d0 <_nv006997rm+0x220>
+  2978b7:	81 4d 48 00 00 00 04 	orl    $0x4000000,0x48(%rbp)
+  2978be:	81 65 48 ff ff ff f7 	andl   $0xf7ffffff,0x48(%rbp)
+  2978c5:	45 85 c9             	test   %r9d,%r9d
+  2978c8:	0f 85 a1 0b 00 00    	jne    29846f <_nv006997rm+0xdbf>
+  2978ce:	66 90                	xchg   %ax,%ax
+  2978d0:	31 d2                	xor    %edx,%edx
+  2978d2:	31 f6                	xor    %esi,%esi
+  2978d4:	b9 14 f6 10 00       	mov    $0x10f614,%ecx
+  2978d9:	4c 89 e7             	mov    %r12,%rdi
+  2978dc:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  2978e3:	00 
+  2978e4:	41 f6 86 d8 18 00 00 	testb  $0x2,0x18d8(%r14)
+  2978eb:	02 
+  2978ec:	89 45 40             	mov    %eax,0x40(%rbp)
+  2978ef:	74 65                	je     297956 <_nv006997rm+0x2a6>
+  2978f1:	f6 83 8c 00 00 00 02 	testb  $0x2,0x8c(%rbx)
+  2978f8:	0f 84 d2 08 00 00    	je     2981d0 <_nv006997rm+0xb20>
+  2978fe:	80 e4 fe             	and    $0xfe,%ah
+  297901:	8b 55 34             	mov    0x34(%rbp),%edx
+  297904:	44 8b 4d 24          	mov    0x24(%rbp),%r9d
+  297908:	89 45 40             	mov    %eax,0x40(%rbp)
+  29790b:	8b 45 34             	mov    0x34(%rbp),%eax
+  29790e:	81 e2 ff ff ff ef    	and    $0xefffffff,%edx
+  297914:	25 ff ff ff f7       	and    $0xf7ffffff,%eax
+  297919:	45 85 c9             	test   %r9d,%r9d
+  29791c:	0f 44 d0             	cmove  %eax,%edx
+  29791f:	41 80 be 58 13 00 00 	cmpb   $0x0,0x1358(%r14)
+  297926:	00 
+  297927:	89 55 34             	mov    %edx,0x34(%rbp)
+  29792a:	75 2a                	jne    297956 <_nv006997rm+0x2a6>
+  29792c:	31 d2                	xor    %edx,%edx
+  29792e:	be 01 00 00 00       	mov    $0x1,%esi
+  297933:	89 f0                	mov    %esi,%eax
+  297935:	89 d1                	mov    %edx,%ecx
+  297937:	d3 e0                	shl    %cl,%eax
+  297939:	85 45 2c             	test   %eax,0x2c(%rbp)
+  29793c:	74 11                	je     29794f <_nv006997rm+0x29f>
+  29793e:	8d 0c 12             	lea    (%rdx,%rdx,1),%ecx
+  297941:	89 f0                	mov    %esi,%eax
+  297943:	83 e1 1f             	and    $0x1f,%ecx
+  297946:	d3 e0                	shl    %cl,%eax
+  297948:	89 c1                	mov    %eax,%ecx
+  29794a:	f7 d1                	not    %ecx
+  29794c:	21 4d 38             	and    %ecx,0x38(%rbp)
+  29794f:	ff c2                	inc    %edx
+  297951:	83 fa 09             	cmp    $0x9,%edx
+  297954:	76 dd                	jbe    297933 <_nv006997rm+0x283>
+  297956:	31 d2                	xor    %edx,%edx
+  297958:	31 f6                	xor    %esi,%esi
+  29795a:	b9 10 f6 10 00       	mov    $0x10f610,%ecx
+  29795f:	4c 89 e7             	mov    %r12,%rdi
+  297962:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297969:	00 
+  29796a:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  297971:	89 c2                	mov    %eax,%edx
+  297973:	89 c1                	mov    %eax,%ecx
+  297975:	f7 c6 00 00 00 04    	test   $0x4000000,%esi
+  29797b:	74 13                	je     297990 <_nv006997rm+0x2e0>
+  29797d:	f6 83 8f 00 00 00 02 	testb  $0x2,0x8f(%rbx)
+  297984:	0f 84 3b 08 00 00    	je     2981c5 <_nv006997rm+0xb15>
+  29798a:	80 e6 fe             	and    $0xfe,%dh
+  29798d:	89 d1                	mov    %edx,%ecx
+  29798f:	90                   	nop
+  297990:	48 b8 00 00 00 00 00 	movabs $0x10000000000,%rax
+  297997:	01 00 00 
+  29799a:	48 85 c6             	test   %rax,%rsi
+  29799d:	74 45                	je     2979e4 <_nv006997rm+0x334>
+  29799f:	8b b3 70 01 00 00    	mov    0x170(%rbx),%esi
+  2979a5:	8b 7d 24             	mov    0x24(%rbp),%edi
+  2979a8:	81 65 40 ff ff ff 8f 	andl   $0x8fffffff,0x40(%rbp)
+  2979af:	89 f2                	mov    %esi,%edx
+  2979b1:	83 e2 07             	and    $0x7,%edx
+  2979b4:	89 d0                	mov    %edx,%eax
+  2979b6:	c1 e0 1c             	shl    $0x1c,%eax
+  2979b9:	09 45 40             	or     %eax,0x40(%rbp)
+  2979bc:	85 ff                	test   %edi,%edi
+  2979be:	0f 85 dc 08 00 00    	jne    2982a0 <_nv006997rm+0xbf0>
+  2979c4:	81 65 34 3f fe ff ff 	andl   $0xfffffe3f,0x34(%rbp)
+  2979cb:	c1 e2 06             	shl    $0x6,%edx
+  2979ce:	09 55 34             	or     %edx,0x34(%rbp)
+  2979d1:	83 e6 07             	and    $0x7,%esi
+  2979d4:	81 e1 ff ff ff 8f    	and    $0x8fffffff,%ecx
+  2979da:	c1 e6 1c             	shl    $0x1c,%esi
+  2979dd:	09 f1                	or     %esi,%ecx
+  2979df:	89 4d 5c             	mov    %ecx,0x5c(%rbp)
+  2979e2:	eb 03                	jmp    2979e7 <_nv006997rm+0x337>
+  2979e4:	89 55 5c             	mov    %edx,0x5c(%rbp)
+  2979e7:	48 8d 55 5c          	lea    0x5c(%rbp),%rdx
+  2979eb:	4c 89 f6             	mov    %r14,%rsi
+  2979ee:	4c 89 e7             	mov    %r12,%rdi
+  2979f1:	41 ff 96 38 0f 00 00 	call   *0xf38(%r14)
+  2979f8:	8b 55 18             	mov    0x18(%rbp),%edx
+  2979fb:	39 55 14             	cmp    %edx,0x14(%rbp)
+  2979fe:	74 10                	je     297a10 <_nv006997rm+0x360>
+  297a00:	8b 55 14             	mov    0x14(%rbp),%edx
+  297a03:	be 0c f6 10 00       	mov    $0x10f60c,%esi
+  297a08:	4c 89 ff             	mov    %r15,%rdi
+  297a0b:	e8 00 00 00 00       	call   297a10 <_nv006997rm+0x360>
+  297a10:	8b 53 44             	mov    0x44(%rbx),%edx
+  297a13:	3b 53 40             	cmp    0x40(%rbx),%edx
+  297a16:	74 28                	je     297a40 <_nv006997rm+0x390>
+  297a18:	8b 8b a4 00 00 00    	mov    0xa4(%rbx),%ecx
+  297a1e:	85 c9                	test   %ecx,%ecx
+  297a20:	0f 85 aa 09 00 00    	jne    2983d0 <_nv006997rm+0xd20>
+  297a26:	be 04 f3 10 00       	mov    $0x10f304,%esi
+  297a2b:	4c 89 ff             	mov    %r15,%rdi
+  297a2e:	e8 00 00 00 00       	call   297a33 <_nv006997rm+0x383>
+  297a33:	be 01 00 00 00       	mov    $0x1,%esi
+  297a38:	4c 89 ff             	mov    %r15,%rdi
+  297a3b:	e8 00 00 00 00       	call   297a40 <_nv006997rm+0x390>
+  297a40:	4c 89 f7             	mov    %r14,%rdi
+  297a43:	41 ff 96 88 02 00 00 	call   *0x288(%r14)
+  297a4a:	85 c0                	test   %eax,%eax
+  297a4c:	74 0e                	je     297a5c <_nv006997rm+0x3ac>
+  297a4e:	41 83 be d4 18 00 00 	cmpl   $0x7,0x18d4(%r14)
+  297a55:	07 
+  297a56:	0f 84 1c 0a 00 00    	je     298478 <_nv006997rm+0xdc8>
+  297a5c:	8b 53 58             	mov    0x58(%rbx),%edx
+  297a5f:	3b 53 54             	cmp    0x54(%rbx),%edx
+  297a62:	74 46                	je     297aaa <_nv006997rm+0x3fa>
+  297a64:	8b 45 28             	mov    0x28(%rbp),%eax
+  297a67:	be 34 f3 10 00       	mov    $0x10f334,%esi
+  297a6c:	85 c0                	test   %eax,%eax
+  297a6e:	75 25                	jne    297a95 <_nv006997rm+0x3e5>
+  297a70:	8b 83 a4 00 00 00    	mov    0xa4(%rbx),%eax
+  297a76:	85 c0                	test   %eax,%eax
+  297a78:	74 16                	je     297a90 <_nv006997rm+0x3e0>
+  297a7a:	be 28 f3 10 00       	mov    $0x10f328,%esi
+  297a7f:	4c 89 ff             	mov    %r15,%rdi
+  297a82:	e8 00 00 00 00       	call   297a87 <_nv006997rm+0x3d7>
+  297a87:	8b 53 58             	mov    0x58(%rbx),%edx
+  297a8a:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  297a90:	be 20 f3 10 00       	mov    $0x10f320,%esi
+  297a95:	4c 89 ff             	mov    %r15,%rdi
+  297a98:	e8 00 00 00 00       	call   297a9d <_nv006997rm+0x3ed>
+  297a9d:	be 01 00 00 00       	mov    $0x1,%esi
+  297aa2:	4c 89 ff             	mov    %r15,%rdi
+  297aa5:	e8 00 00 00 00       	call   297aaa <_nv006997rm+0x3fa>
+  297aaa:	8b 53 48             	mov    0x48(%rbx),%edx
+  297aad:	3b 53 44             	cmp    0x44(%rbx),%edx
+  297ab0:	74 40                	je     297af2 <_nv006997rm+0x442>
+  297ab2:	8b 45 28             	mov    0x28(%rbp),%eax
+  297ab5:	be 30 f3 10 00       	mov    $0x10f330,%esi
+  297aba:	85 c0                	test   %eax,%eax
+  297abc:	75 1f                	jne    297add <_nv006997rm+0x42d>
+  297abe:	8b 83 a4 00 00 00    	mov    0xa4(%rbx),%eax
+  297ac4:	85 c0                	test   %eax,%eax
+  297ac6:	74 10                	je     297ad8 <_nv006997rm+0x428>
+  297ac8:	be 0c f3 10 00       	mov    $0x10f30c,%esi
+  297acd:	4c 89 ff             	mov    %r15,%rdi
+  297ad0:	e8 00 00 00 00       	call   297ad5 <_nv006997rm+0x425>
+  297ad5:	8b 53 48             	mov    0x48(%rbx),%edx
+  297ad8:	be 04 f3 10 00       	mov    $0x10f304,%esi
+  297add:	4c 89 ff             	mov    %r15,%rdi
+  297ae0:	e8 00 00 00 00       	call   297ae5 <_nv006997rm+0x435>
+  297ae5:	be 01 00 00 00       	mov    $0x1,%esi
+  297aea:	4c 89 ff             	mov    %r15,%rdi
+  297aed:	e8 00 00 00 00       	call   297af2 <_nv006997rm+0x442>
+  297af2:	41 f6 86 d9 18 00 00 	testb  $0x8,0x18d9(%r14)
+  297af9:	08 
+  297afa:	74 3a                	je     297b36 <_nv006997rm+0x486>
+  297afc:	44 8b 6b 28          	mov    0x28(%rbx),%r13d
+  297b00:	45 85 ed             	test   %r13d,%r13d
+  297b03:	0f 84 26 0a 00 00    	je     29852f <_nv006997rm+0xe7f>
+  297b09:	44 8b 9b a4 00 00 00 	mov    0xa4(%rbx),%r11d
+  297b10:	45 85 db             	test   %r11d,%r11d
+  297b13:	0f 85 cc 08 00 00    	jne    2983e5 <_nv006997rm+0xd35>
+  297b19:	8b 53 34             	mov    0x34(%rbx),%edx
+  297b1c:	be 00 f3 10 00       	mov    $0x10f300,%esi
+  297b21:	4c 89 ff             	mov    %r15,%rdi
+  297b24:	e8 00 00 00 00       	call   297b29 <_nv006997rm+0x479>
+  297b29:	be 01 00 00 00       	mov    $0x1,%esi
+  297b2e:	4c 89 ff             	mov    %r15,%rdi
+  297b31:	e8 00 00 00 00       	call   297b36 <_nv006997rm+0x486>
+  297b36:	31 d2                	xor    %edx,%edx
+  297b38:	31 f6                	xor    %esi,%esi
+  297b3a:	b9 24 f2 10 00       	mov    $0x10f224,%ecx
+  297b3f:	4c 89 e7             	mov    %r12,%rdi
+  297b42:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297b49:	00 
+  297b4a:	8b 93 f0 00 00 00    	mov    0xf0(%rbx),%edx
+  297b50:	39 d0                	cmp    %edx,%eax
+  297b52:	74 0d                	je     297b61 <_nv006997rm+0x4b1>
+  297b54:	be 24 f2 10 00       	mov    $0x10f224,%esi
+  297b59:	4c 89 ff             	mov    %r15,%rdi
+  297b5c:	e8 00 00 00 00       	call   297b61 <_nv006997rm+0x4b1>
+  297b61:	41 f6 86 d9 18 00 00 	testb  $0x10,0x18d9(%r14)
+  297b68:	10 
+  297b69:	74 1b                	je     297b86 <_nv006997rm+0x4d6>
+  297b6b:	8b 93 f8 00 00 00    	mov    0xf8(%rbx),%edx
+  297b71:	39 93 f4 00 00 00    	cmp    %edx,0xf4(%rbx)
+  297b77:	74 0d                	je     297b86 <_nv006997rm+0x4d6>
+  297b79:	be 90 f2 10 00       	mov    $0x10f290,%esi
+  297b7e:	4c 89 ff             	mov    %r15,%rdi
+  297b81:	e8 00 00 00 00       	call   297b86 <_nv006997rm+0x4d6>
+  297b86:	31 d2                	xor    %edx,%edx
+  297b88:	31 f6                	xor    %esi,%esi
+  297b8a:	b9 94 f2 10 00       	mov    $0x10f294,%ecx
+  297b8f:	4c 89 e7             	mov    %r12,%rdi
+  297b92:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297b99:	00 
+  297b9a:	8b 93 fc 00 00 00    	mov    0xfc(%rbx),%edx
+  297ba0:	39 d0                	cmp    %edx,%eax
+  297ba2:	74 0d                	je     297bb1 <_nv006997rm+0x501>
+  297ba4:	be 94 f2 10 00       	mov    $0x10f294,%esi
+  297ba9:	4c 89 ff             	mov    %r15,%rdi
+  297bac:	e8 00 00 00 00       	call   297bb1 <_nv006997rm+0x501>
+  297bb1:	31 d2                	xor    %edx,%edx
+  297bb3:	31 f6                	xor    %esi,%esi
+  297bb5:	b9 98 f2 10 00       	mov    $0x10f298,%ecx
+  297bba:	4c 89 e7             	mov    %r12,%rdi
+  297bbd:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297bc4:	00 
+  297bc5:	8b 93 00 01 00 00    	mov    0x100(%rbx),%edx
+  297bcb:	39 d0                	cmp    %edx,%eax
+  297bcd:	74 0d                	je     297bdc <_nv006997rm+0x52c>
+  297bcf:	be 98 f2 10 00       	mov    $0x10f298,%esi
+  297bd4:	4c 89 ff             	mov    %r15,%rdi
+  297bd7:	e8 00 00 00 00       	call   297bdc <_nv006997rm+0x52c>
+  297bdc:	48 b8 00 40 00 20 02 	movabs $0x220004000,%rax
+  297be3:	00 00 00 
+  297be6:	49 85 86 d8 18 00 00 	test   %rax,0x18d8(%r14)
+  297bed:	0f 85 65 07 00 00    	jne    298358 <_nv006997rm+0xca8>
+  297bf3:	31 d2                	xor    %edx,%edx
+  297bf5:	31 f6                	xor    %esi,%esi
+  297bf7:	b9 a0 f2 10 00       	mov    $0x10f2a0,%ecx
+  297bfc:	4c 89 e7             	mov    %r12,%rdi
+  297bff:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297c06:	00 
+  297c07:	8b 93 08 01 00 00    	mov    0x108(%rbx),%edx
+  297c0d:	39 d0                	cmp    %edx,%eax
+  297c0f:	74 0d                	je     297c1e <_nv006997rm+0x56e>
+  297c11:	be a0 f2 10 00       	mov    $0x10f2a0,%esi
+  297c16:	4c 89 ff             	mov    %r15,%rdi
+  297c19:	e8 00 00 00 00       	call   297c1e <_nv006997rm+0x56e>
+  297c1e:	31 d2                	xor    %edx,%edx
+  297c20:	31 f6                	xor    %esi,%esi
+  297c22:	b9 a4 f2 10 00       	mov    $0x10f2a4,%ecx
+  297c27:	4c 89 e7             	mov    %r12,%rdi
+  297c2a:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297c31:	00 
+  297c32:	8b 93 0c 01 00 00    	mov    0x10c(%rbx),%edx
+  297c38:	39 d0                	cmp    %edx,%eax
+  297c3a:	74 0d                	je     297c49 <_nv006997rm+0x599>
+  297c3c:	be a4 f2 10 00       	mov    $0x10f2a4,%esi
+  297c41:	4c 89 ff             	mov    %r15,%rdi
+  297c44:	e8 00 00 00 00       	call   297c49 <_nv006997rm+0x599>
+  297c49:	31 d2                	xor    %edx,%edx
+  297c4b:	31 f6                	xor    %esi,%esi
+  297c4d:	b9 a8 f2 10 00       	mov    $0x10f2a8,%ecx
+  297c52:	4c 89 e7             	mov    %r12,%rdi
+  297c55:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297c5c:	00 
+  297c5d:	8b 93 10 01 00 00    	mov    0x110(%rbx),%edx
+  297c63:	39 d0                	cmp    %edx,%eax
+  297c65:	74 0d                	je     297c74 <_nv006997rm+0x5c4>
+  297c67:	be a8 f2 10 00       	mov    $0x10f2a8,%esi
+  297c6c:	4c 89 ff             	mov    %r15,%rdi
+  297c6f:	e8 00 00 00 00       	call   297c74 <_nv006997rm+0x5c4>
+  297c74:	8b 4d 44             	mov    0x44(%rbp),%ecx
+  297c77:	39 4b 04             	cmp    %ecx,0x4(%rbx)
+  297c7a:	74 15                	je     297c91 <_nv006997rm+0x5e1>
+  297c7c:	89 ca                	mov    %ecx,%edx
+  297c7e:	be 00 f2 10 00       	mov    $0x10f200,%esi
+  297c83:	4c 89 ff             	mov    %r15,%rdi
+  297c86:	e8 00 00 00 00       	call   297c8b <_nv006997rm+0x5db>
+  297c8b:	8b 45 44             	mov    0x44(%rbp),%eax
+  297c8e:	89 43 04             	mov    %eax,0x4(%rbx)
+  297c91:	8b 55 4c             	mov    0x4c(%rbp),%edx
+  297c94:	39 53 10             	cmp    %edx,0x10(%rbx)
+  297c97:	74 0d                	je     297ca6 <_nv006997rm+0x5f6>
+  297c99:	be 04 f6 10 00       	mov    $0x10f604,%esi
+  297c9e:	4c 89 ff             	mov    %r15,%rdi
+  297ca1:	e8 00 00 00 00       	call   297ca6 <_nv006997rm+0x5f6>
+  297ca6:	31 d2                	xor    %edx,%edx
+  297ca8:	31 f6                	xor    %esi,%esi
+  297caa:	b9 14 f6 10 00       	mov    $0x10f614,%ecx
+  297caf:	4c 89 e7             	mov    %r12,%rdi
+  297cb2:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297cb9:	00 
+  297cba:	3b 45 40             	cmp    0x40(%rbp),%eax
+  297cbd:	74 10                	je     297ccf <_nv006997rm+0x61f>
+  297cbf:	8b 55 40             	mov    0x40(%rbp),%edx
+  297cc2:	be 14 f6 10 00       	mov    $0x10f614,%esi
+  297cc7:	4c 89 ff             	mov    %r15,%rdi
+  297cca:	e8 00 00 00 00       	call   297ccf <_nv006997rm+0x61f>
+  297ccf:	31 d2                	xor    %edx,%edx
+  297cd1:	31 f6                	xor    %esi,%esi
+  297cd3:	b9 10 f6 10 00       	mov    $0x10f610,%ecx
+  297cd8:	4c 89 e7             	mov    %r12,%rdi
+  297cdb:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297ce2:	00 
+  297ce3:	8b 55 5c             	mov    0x5c(%rbp),%edx
+  297ce6:	39 d0                	cmp    %edx,%eax
+  297ce8:	74 0d                	je     297cf7 <_nv006997rm+0x647>
+  297cea:	be 10 f6 10 00       	mov    $0x10f610,%esi
+  297cef:	4c 89 ff             	mov    %r15,%rdi
+  297cf2:	e8 00 00 00 00       	call   297cf7 <_nv006997rm+0x647>
+  297cf7:	8b 4d 48             	mov    0x48(%rbp),%ecx
+  297cfa:	39 4b 0c             	cmp    %ecx,0xc(%rbx)
+  297cfd:	74 15                	je     297d14 <_nv006997rm+0x664>
+  297cff:	89 ca                	mov    %ecx,%edx
+  297d01:	be 08 f8 10 00       	mov    $0x10f808,%esi
+  297d06:	4c 89 ff             	mov    %r15,%rdi
+  297d09:	e8 00 00 00 00       	call   297d0e <_nv006997rm+0x65e>
+  297d0e:	8b 45 48             	mov    0x48(%rbp),%eax
+  297d11:	89 43 0c             	mov    %eax,0xc(%rbx)
+  297d14:	8b 55 3c             	mov    0x3c(%rbp),%edx
+  297d17:	39 53 14             	cmp    %edx,0x14(%rbx)
+  297d1a:	74 13                	je     297d2f <_nv006997rm+0x67f>
+  297d1c:	be ec 73 13 00       	mov    $0x1373ec,%esi
+  297d21:	4c 89 ff             	mov    %r15,%rdi
+  297d24:	e8 00 00 00 00       	call   297d29 <_nv006997rm+0x679>
+  297d29:	8b 4d 3c             	mov    0x3c(%rbp),%ecx
+  297d2c:	89 4b 14             	mov    %ecx,0x14(%rbx)
+  297d2f:	8b 45 38             	mov    0x38(%rbp),%eax
+  297d32:	39 43 18             	cmp    %eax,0x18(%rbx)
+  297d35:	74 15                	je     297d4c <_nv006997rm+0x69c>
+  297d37:	89 c2                	mov    %eax,%edx
+  297d39:	be f8 73 13 00       	mov    $0x1373f8,%esi
+  297d3e:	4c 89 ff             	mov    %r15,%rdi
+  297d41:	e8 00 00 00 00       	call   297d46 <_nv006997rm+0x696>
+  297d46:	8b 55 38             	mov    0x38(%rbp),%edx
+  297d49:	89 53 18             	mov    %edx,0x18(%rbx)
+  297d4c:	41 f6 86 de 18 00 00 	testb  $0x40,0x18de(%r14)
+  297d53:	40 
+  297d54:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  297d5b:	0f 85 cf 05 00 00    	jne    298330 <_nv006997rm+0xc80>
+  297d61:	f7 c6 00 00 00 40    	test   $0x40000000,%esi
+  297d67:	0f 85 64 05 00 00    	jne    2982d1 <_nv006997rm+0xc21>
+  297d6d:	8b 53 4c             	mov    0x4c(%rbx),%edx
+  297d70:	3b 53 48             	cmp    0x48(%rbx),%edx
+  297d73:	74 45                	je     297dba <_nv006997rm+0x70a>
+  297d75:	44 8b 55 28          	mov    0x28(%rbp),%r10d
+  297d79:	be 30 f3 10 00       	mov    $0x10f330,%esi
+  297d7e:	45 85 d2             	test   %r10d,%r10d
+  297d81:	75 22                	jne    297da5 <_nv006997rm+0x6f5>
+  297d83:	44 8b 8b a4 00 00 00 	mov    0xa4(%rbx),%r9d
+  297d8a:	45 85 c9             	test   %r9d,%r9d
+  297d8d:	74 11                	je     297da0 <_nv006997rm+0x6f0>
+  297d8f:	be 0c f3 10 00       	mov    $0x10f30c,%esi
+  297d94:	4c 89 ff             	mov    %r15,%rdi
+  297d97:	e8 00 00 00 00       	call   297d9c <_nv006997rm+0x6ec>
+  297d9c:	8b 53 4c             	mov    0x4c(%rbx),%edx
+  297d9f:	90                   	nop
+  297da0:	be 04 f3 10 00       	mov    $0x10f304,%esi
+  297da5:	4c 89 ff             	mov    %r15,%rdi
+  297da8:	e8 00 00 00 00       	call   297dad <_nv006997rm+0x6fd>
+  297dad:	be 01 00 00 00       	mov    $0x1,%esi
+  297db2:	4c 89 ff             	mov    %r15,%rdi
+  297db5:	e8 00 00 00 00       	call   297dba <_nv006997rm+0x70a>
+  297dba:	8b 53 5c             	mov    0x5c(%rbx),%edx
+  297dbd:	3b 53 58             	cmp    0x58(%rbx),%edx
+  297dc0:	74 48                	je     297e0a <_nv006997rm+0x75a>
+  297dc2:	44 8b 45 28          	mov    0x28(%rbp),%r8d
+  297dc6:	be 34 f3 10 00       	mov    $0x10f334,%esi
+  297dcb:	45 85 c0             	test   %r8d,%r8d
+  297dce:	75 25                	jne    297df5 <_nv006997rm+0x745>
+  297dd0:	8b bb a4 00 00 00    	mov    0xa4(%rbx),%edi
+  297dd6:	85 ff                	test   %edi,%edi
+  297dd8:	74 16                	je     297df0 <_nv006997rm+0x740>
+  297dda:	be 28 f3 10 00       	mov    $0x10f328,%esi
+  297ddf:	4c 89 ff             	mov    %r15,%rdi
+  297de2:	e8 00 00 00 00       	call   297de7 <_nv006997rm+0x737>
+  297de7:	8b 53 5c             	mov    0x5c(%rbx),%edx
+  297dea:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  297df0:	be 20 f3 10 00       	mov    $0x10f320,%esi
+  297df5:	4c 89 ff             	mov    %r15,%rdi
+  297df8:	e8 00 00 00 00       	call   297dfd <_nv006997rm+0x74d>
+  297dfd:	be 01 00 00 00       	mov    $0x1,%esi
+  297e02:	4c 89 ff             	mov    %r15,%rdi
+  297e05:	e8 00 00 00 00       	call   297e0a <_nv006997rm+0x75a>
+  297e0a:	8b 75 28             	mov    0x28(%rbp),%esi
+  297e0d:	85 f6                	test   %esi,%esi
+  297e0f:	0f 84 20 02 00 00    	je     298035 <_nv006997rm+0x985>
+  297e15:	41 8b 86 e0 18 00 00 	mov    0x18e0(%r14),%eax
+  297e1c:	f6 c4 04             	test   $0x4,%ah
+  297e1f:	75 07                	jne    297e28 <_nv006997rm+0x778>
+  297e21:	a9 00 00 04 00       	test   $0x40000,%eax
+  297e26:	74 79                	je     297ea1 <_nv006997rm+0x7f1>
+  297e28:	31 d2                	xor    %edx,%edx
+  297e2a:	b9 40 f3 10 00       	mov    $0x10f340,%ecx
+  297e2f:	31 f6                	xor    %esi,%esi
+  297e31:	4c 89 e7             	mov    %r12,%rdi
+  297e34:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297e3b:	00 
+  297e3c:	89 c2                	mov    %eax,%edx
+  297e3e:	89 83 5c 01 00 00    	mov    %eax,0x15c(%rbx)
+  297e44:	89 c1                	mov    %eax,%ecx
+  297e46:	41 8b 86 e0 18 00 00 	mov    0x18e0(%r14),%eax
+  297e4d:	f6 c4 04             	test   $0x4,%ah
+  297e50:	74 10                	je     297e62 <_nv006997rm+0x7b2>
+  297e52:	83 e2 fb             	and    $0xfffffffb,%edx
+  297e55:	89 93 5c 01 00 00    	mov    %edx,0x15c(%rbx)
+  297e5b:	41 8b 86 e0 18 00 00 	mov    0x18e0(%r14),%eax
+  297e62:	a9 00 00 04 00       	test   $0x40000,%eax
+  297e67:	74 1a                	je     297e83 <_nv006997rm+0x7d3>
+  297e69:	8b 83 60 01 00 00    	mov    0x160(%rbx),%eax
+  297e6f:	81 e2 3f f0 ff ff    	and    $0xfffff03f,%edx
+  297e75:	83 e0 3f             	and    $0x3f,%eax
+  297e78:	c1 e0 06             	shl    $0x6,%eax
+  297e7b:	09 c2                	or     %eax,%edx
+  297e7d:	89 93 5c 01 00 00    	mov    %edx,0x15c(%rbx)
+  297e83:	39 ca                	cmp    %ecx,%edx
+  297e85:	74 1a                	je     297ea1 <_nv006997rm+0x7f1>
+  297e87:	be 40 f3 10 00       	mov    $0x10f340,%esi
+  297e8c:	4c 89 ff             	mov    %r15,%rdi
+  297e8f:	e8 00 00 00 00       	call   297e94 <_nv006997rm+0x7e4>
+  297e94:	be 01 00 00 00       	mov    $0x1,%esi
+  297e99:	4c 89 ff             	mov    %r15,%rdi
+  297e9c:	e8 00 00 00 00       	call   297ea1 <_nv006997rm+0x7f1>
+  297ea1:	49 8b 96 d8 18 00 00 	mov    0x18d8(%r14),%rdx
+  297ea8:	49 bd 00 00 00 00 08 	movabs $0x800000000,%r13
+  297eaf:	00 00 00 
+  297eb2:	4c 85 ea             	test   %r13,%rdx
+  297eb5:	75 13                	jne    297eca <_nv006997rm+0x81a>
+  297eb7:	48 b8 00 00 00 00 00 	movabs $0x20000000000000,%rax
+  297ebe:	00 20 00 
+  297ec1:	48 85 c2             	test   %rax,%rdx
+  297ec4:	0f 84 8a 00 00 00    	je     297f54 <_nv006997rm+0x8a4>
+  297eca:	31 f6                	xor    %esi,%esi
+  297ecc:	b9 44 f3 10 00       	mov    $0x10f344,%ecx
+  297ed1:	31 d2                	xor    %edx,%edx
+  297ed3:	4c 89 e7             	mov    %r12,%rdi
+  297ed6:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297edd:	00 
+  297ede:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  297ee5:	89 c1                	mov    %eax,%ecx
+  297ee7:	89 c7                	mov    %eax,%edi
+  297ee9:	4c 85 ee             	test   %r13,%rsi
+  297eec:	74 15                	je     297f03 <_nv006997rm+0x853>
+  297eee:	8b 8b 8c 00 00 00    	mov    0x8c(%rbx),%ecx
+  297ef4:	89 c2                	mov    %eax,%edx
+  297ef6:	83 c8 01             	or     $0x1,%eax
+  297ef9:	83 e2 fe             	and    $0xfffffffe,%edx
+  297efc:	85 c9                	test   %ecx,%ecx
+  297efe:	89 d1                	mov    %edx,%ecx
+  297f00:	0f 48 c8             	cmovs  %eax,%ecx
+  297f03:	48 b8 00 00 00 00 00 	movabs $0x20000000000000,%rax
+  297f0a:	00 20 00 
+  297f0d:	48 85 c6             	test   %rax,%rsi
+  297f10:	74 22                	je     297f34 <_nv006997rm+0x884>
+  297f12:	8b 83 c0 00 00 00    	mov    0xc0(%rbx),%eax
+  297f18:	80 e1 0f             	and    $0xf,%cl
+  297f1b:	83 e0 0f             	and    $0xf,%eax
+  297f1e:	c1 e0 04             	shl    $0x4,%eax
+  297f21:	09 c1                	or     %eax,%ecx
+  297f23:	8b 83 c4 00 00 00    	mov    0xc4(%rbx),%eax
+  297f29:	80 e5 f0             	and    $0xf0,%ch
+  297f2c:	83 e0 0f             	and    $0xf,%eax
+  297f2f:	c1 e0 08             	shl    $0x8,%eax
+  297f32:	09 c1                	or     %eax,%ecx
+  297f34:	39 f9                	cmp    %edi,%ecx
+  297f36:	74 1c                	je     297f54 <_nv006997rm+0x8a4>
+  297f38:	be 44 f3 10 00       	mov    $0x10f344,%esi
+  297f3d:	4c 89 ff             	mov    %r15,%rdi
+  297f40:	89 ca                	mov    %ecx,%edx
+  297f42:	e8 00 00 00 00       	call   297f47 <_nv006997rm+0x897>
+  297f47:	be 01 00 00 00       	mov    $0x1,%esi
+  297f4c:	4c 89 ff             	mov    %r15,%rdi
+  297f4f:	e8 00 00 00 00       	call   297f54 <_nv006997rm+0x8a4>
+  297f54:	31 d2                	xor    %edx,%edx
+  297f56:	31 f6                	xor    %esi,%esi
+  297f58:	b9 48 f3 10 00       	mov    $0x10f348,%ecx
+  297f5d:	4c 89 e7             	mov    %r12,%rdi
+  297f60:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297f67:	00 
+  297f68:	89 83 68 01 00 00    	mov    %eax,0x168(%rbx)
+  297f6e:	41 f6 86 dc 18 00 00 	testb  $0x10,0x18dc(%r14)
+  297f75:	10 
+  297f76:	89 c2                	mov    %eax,%edx
+  297f78:	89 c1                	mov    %eax,%ecx
+  297f7a:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  297f81:	74 1d                	je     297fa0 <_nv006997rm+0x8f0>
+  297f83:	f6 83 8e 00 00 00 01 	testb  $0x1,0x8e(%rbx)
+  297f8a:	0f 85 d7 04 00 00    	jne    298467 <_nv006997rm+0xdb7>
+  297f90:	83 e2 f7             	and    $0xfffffff7,%edx
+  297f93:	89 93 68 01 00 00    	mov    %edx,0x168(%rbx)
+  297f99:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  297fa0:	48 b8 00 00 00 00 80 	movabs $0x8000000000,%rax
+  297fa7:	00 00 00 
+  297faa:	48 85 c6             	test   %rax,%rsi
+  297fad:	74 16                	je     297fc5 <_nv006997rm+0x915>
+  297faf:	f6 83 8f 00 00 00 08 	testb  $0x8,0x8f(%rbx)
+  297fb6:	0f 84 a3 04 00 00    	je     29845f <_nv006997rm+0xdaf>
+  297fbc:	80 ca 80             	or     $0x80,%dl
+  297fbf:	89 93 68 01 00 00    	mov    %edx,0x168(%rbx)
+  297fc5:	39 ca                	cmp    %ecx,%edx
+  297fc7:	74 0d                	je     297fd6 <_nv006997rm+0x926>
+  297fc9:	be 48 f3 10 00       	mov    $0x10f348,%esi
+  297fce:	4c 89 ff             	mov    %r15,%rdi
+  297fd1:	e8 00 00 00 00       	call   297fd6 <_nv006997rm+0x926>
+  297fd6:	8b 43 10             	mov    0x10(%rbx),%eax
+  297fd9:	8b 55 4c             	mov    0x4c(%rbp),%edx
+  297fdc:	c1 e8 1f             	shr    $0x1f,%eax
+  297fdf:	c1 ea 1f             	shr    $0x1f,%edx
+  297fe2:	39 d0                	cmp    %edx,%eax
+  297fe4:	74 4f                	je     298035 <_nv006997rm+0x985>
+  297fe6:	b9 50 07 10 00       	mov    $0x100750,%ecx
+  297feb:	31 d2                	xor    %edx,%edx
+  297fed:	31 f6                	xor    %esi,%esi
+  297fef:	4c 89 e7             	mov    %r12,%rdi
+  297ff2:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  297ff9:	00 
+  297ffa:	83 c8 08             	or     $0x8,%eax
+  297ffd:	be 50 07 10 00       	mov    $0x100750,%esi
+  298002:	4c 89 ff             	mov    %r15,%rdi
+  298005:	89 c2                	mov    %eax,%edx
+  298007:	e8 00 00 00 00       	call   29800c <_nv006997rm+0x95c>
+  29800c:	31 d2                	xor    %edx,%edx
+  29800e:	be 10 07 10 00       	mov    $0x100710,%esi
+  298013:	4c 89 ff             	mov    %r15,%rdi
+  298016:	e8 00 00 00 00       	call   29801b <_nv006997rm+0x96b>
+  29801b:	b9 00 00 00 80       	mov    $0x80000000,%ecx
+  298020:	41 b8 c8 00 00 00    	mov    $0xc8,%r8d
+  298026:	be 10 07 10 00       	mov    $0x100710,%esi
+  29802b:	89 ca                	mov    %ecx,%edx
+  29802d:	4c 89 ff             	mov    %r15,%rdi
+  298030:	e8 00 00 00 00       	call   298035 <_nv006997rm+0x985>
+  298035:	8b 4d 34             	mov    0x34(%rbp),%ecx
+  298038:	39 4d 30             	cmp    %ecx,0x30(%rbp)
+  29803b:	74 1e                	je     29805b <_nv006997rm+0x9ab>
+  29803d:	8b 45 24             	mov    0x24(%rbp),%eax
+  298040:	89 ca                	mov    %ecx,%edx
+  298042:	be 40 c1 61 00       	mov    $0x61c140,%esi
+  298047:	85 c0                	test   %eax,%eax
+  298049:	75 08                	jne    298053 <_nv006997rm+0x9a3>
+  29804b:	8b 55 34             	mov    0x34(%rbp),%edx
+  29804e:	be 00 0c 10 00       	mov    $0x100c00,%esi
+  298053:	4c 89 ff             	mov    %r15,%rdi
+  298056:	e8 00 00 00 00       	call   29805b <_nv006997rm+0x9ab>
+  29805b:	8b 45 4c             	mov    0x4c(%rbp),%eax
+  29805e:	89 43 10             	mov    %eax,0x10(%rbx)
+  298061:	31 c0                	xor    %eax,%eax
+  298063:	48 83 c5 60          	add    $0x60,%rbp
+  298067:	5b                   	pop    %rbx
+  298068:	41 5c                	pop    %r12
+  29806a:	41 5d                	pop    %r13
+  29806c:	41 5e                	pop    %r14
+  29806e:	41 5f                	pop    %r15
+  298070:	c3                   	ret
+  298071:	b9 40 c1 61 00       	mov    $0x61c140,%ecx
+  298076:	e9 e0 f6 ff ff       	jmp    29775b <_nv006997rm+0xab>
+  29807b:	0f 1f 44 00 00       	nopl   0x0(%rax,%rax,1)
+  298080:	44 8b 4d 14          	mov    0x14(%rbp),%r9d
+  298084:	41 c1 e9 1c          	shr    $0x1c,%r9d
+  298088:	41 83 e1 01          	and    $0x1,%r9d
+  29808c:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  298093:	f7 c6 20 01 00 00    	test   $0x120,%esi
+  298099:	0f 84 51 f7 ff ff    	je     2977f0 <_nv006997rm+0x140>
+  29809f:	f7 c6 00 01 00 00    	test   $0x100,%esi
+  2980a5:	0f 85 f7 00 00 00    	jne    2981a2 <_nv006997rm+0xaf2>
+  2980ab:	40 f6 c6 20          	test   $0x20,%sil
+  2980af:	74 0f                	je     2980c0 <_nv006997rm+0xa10>
+  2980b1:	44 8b 83 8c 00 00 00 	mov    0x8c(%rbx),%r8d
+  2980b8:	41 c1 e8 05          	shr    $0x5,%r8d
+  2980bc:	41 83 e0 01          	and    $0x1,%r8d
+  2980c0:	3d d1 2a 75 00       	cmp    $0x752ad1,%eax
+  2980c5:	c7 45 1c 00 00 00 00 	movl   $0x0,0x1c(%rbp)
+  2980cc:	0f 86 4b 03 00 00    	jbe    29841d <_nv006997rm+0xd6d>
+  2980d2:	44 89 e9             	mov    %r13d,%ecx
+  2980d5:	44 09 c1             	or     %r8d,%ecx
+  2980d8:	0f 84 b2 02 00 00    	je     298390 <_nv006997rm+0xce0>
+  2980de:	8b 55 28             	mov    0x28(%rbp),%edx
+  2980e1:	8b 45 20             	mov    0x20(%rbp),%eax
+  2980e4:	81 4d 44 00 10 00 00 	orl    $0x1000,0x44(%rbp)
+  2980eb:	85 d2                	test   %edx,%edx
+  2980ed:	0f 95 c2             	setne  %dl
+  2980f0:	85 c0                	test   %eax,%eax
+  2980f2:	0f 94 c0             	sete   %al
+  2980f5:	09 d0                	or     %edx,%eax
+  2980f7:	a8 01                	test   $0x1,%al
+  2980f9:	75 0b                	jne    298106 <_nv006997rm+0xa56>
+  2980fb:	8b 45 1c             	mov    0x1c(%rbp),%eax
+  2980fe:	85 c0                	test   %eax,%eax
+  298100:	0f 84 91 02 00 00    	je     298397 <_nv006997rm+0xce7>
+  298106:	81 4d 4c 00 00 00 01 	orl    $0x1000000,0x4c(%rbp)
+  29810d:	45 85 ed             	test   %r13d,%r13d
+  298110:	0f 84 91 02 00 00    	je     2983a7 <_nv006997rm+0xcf7>
+  298116:	8b 45 28             	mov    0x28(%rbp),%eax
+  298119:	85 c0                	test   %eax,%eax
+  29811b:	0f 85 d9 02 00 00    	jne    2983fa <_nv006997rm+0xd4a>
+  298121:	81 65 48 ff ff cf ff 	andl   $0xffcfffff,0x48(%rbp)
+  298128:	81 4d 48 00 00 10 00 	orl    $0x100000,0x48(%rbp)
+  29812f:	8b 55 48             	mov    0x48(%rbp),%edx
+  298132:	8b 45 48             	mov    0x48(%rbp),%eax
+  298135:	81 ca 00 00 00 10    	or     $0x10000000,%edx
+  29813b:	25 ff ff ff ef       	and    $0xefffffff,%eax
+  298140:	45 85 c9             	test   %r9d,%r9d
+  298143:	0f 44 d0             	cmove  %eax,%edx
+  298146:	81 e2 ff ff ff df    	and    $0xdfffffff,%edx
+  29814c:	89 55 48             	mov    %edx,0x48(%rbp)
+  29814f:	45 85 c0             	test   %r8d,%r8d
+  298152:	0f 84 68 02 00 00    	je     2983c0 <_nv006997rm+0xd10>
+  298158:	8b 45 28             	mov    0x28(%rbp),%eax
+  29815b:	85 c0                	test   %eax,%eax
+  29815d:	0f 84 e9 02 00 00    	je     29844c <_nv006997rm+0xd9c>
+  298163:	81 65 48 ff ff 3f fe 	andl   $0xfe3fffff,0x48(%rbp)
+  29816a:	81 4d 48 00 00 80 02 	orl    $0x2800000,0x48(%rbp)
+  298171:	45 85 c9             	test   %r9d,%r9d
+  298174:	0f 84 76 f6 ff ff    	je     2977f0 <_nv006997rm+0x140>
+  29817a:	81 65 48 ff ff 3f fe 	andl   $0xfe3fffff,0x48(%rbp)
+  298181:	81 4d 48 00 00 80 02 	orl    $0x2800000,0x48(%rbp)
+  298188:	e9 63 f6 ff ff       	jmp    2977f0 <_nv006997rm+0x140>
+  29818d:	0f 1f 00             	nopl   (%rax)
+  298190:	81 65 34 ff ff ff fc 	andl   $0xfcffffff,0x34(%rbp)
+  298197:	c1 e2 18             	shl    $0x18,%edx
+  29819a:	09 55 34             	or     %edx,0x34(%rbp)
+  29819d:	e9 86 f6 ff ff       	jmp    297828 <_nv006997rm+0x178>
+  2981a2:	44 8b ab 8c 00 00 00 	mov    0x8c(%rbx),%r13d
+  2981a9:	41 c1 ed 08          	shr    $0x8,%r13d
+  2981ad:	41 83 e5 01          	and    $0x1,%r13d
+  2981b1:	e9 f5 fe ff ff       	jmp    2980ab <_nv006997rm+0x9fb>
+  2981b6:	81 65 14 ff ff ff ef 	andl   $0xefffffff,0x14(%rbp)
+  2981bd:	45 31 c9             	xor    %r9d,%r9d
+  2981c0:	e9 c7 fe ff ff       	jmp    29808c <_nv006997rm+0x9dc>
+  2981c5:	80 ce 01             	or     $0x1,%dh
+  2981c8:	89 d1                	mov    %edx,%ecx
+  2981ca:	e9 c1 f7 ff ff       	jmp    297990 <_nv006997rm+0x2e0>
+  2981cf:	90                   	nop
+  2981d0:	8b 55 34             	mov    0x34(%rbp),%edx
+  2981d3:	8b 45 34             	mov    0x34(%rbp),%eax
+  2981d6:	44 8b 45 24          	mov    0x24(%rbp),%r8d
+  2981da:	81 4d 40 00 01 00 00 	orl    $0x100,0x40(%rbp)
+  2981e1:	81 ca 00 00 00 10    	or     $0x10000000,%edx
+  2981e7:	0d 00 00 00 08       	or     $0x8000000,%eax
+  2981ec:	45 85 c0             	test   %r8d,%r8d
+  2981ef:	0f 44 d0             	cmove  %eax,%edx
+  2981f2:	41 80 be 58 13 00 00 	cmpb   $0x0,0x1358(%r14)
+  2981f9:	00 
+  2981fa:	89 55 34             	mov    %edx,0x34(%rbp)
+  2981fd:	0f 85 53 f7 ff ff    	jne    297956 <_nv006997rm+0x2a6>
+  298203:	31 d2                	xor    %edx,%edx
+  298205:	be 01 00 00 00       	mov    $0x1,%esi
+  29820a:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  298210:	89 f0                	mov    %esi,%eax
+  298212:	89 d1                	mov    %edx,%ecx
+  298214:	d3 e0                	shl    %cl,%eax
+  298216:	85 45 2c             	test   %eax,0x2c(%rbp)
+  298219:	74 0d                	je     298228 <_nv006997rm+0xb78>
+  29821b:	8d 0c 12             	lea    (%rdx,%rdx,1),%ecx
+  29821e:	89 f0                	mov    %esi,%eax
+  298220:	83 e1 1f             	and    $0x1f,%ecx
+  298223:	d3 e0                	shl    %cl,%eax
+  298225:	09 45 38             	or     %eax,0x38(%rbp)
+  298228:	ff c2                	inc    %edx
+  29822a:	83 fa 09             	cmp    $0x9,%edx
+  29822d:	76 e1                	jbe    298210 <_nv006997rm+0xb60>
+  29822f:	e9 22 f7 ff ff       	jmp    297956 <_nv006997rm+0x2a6>
+  298234:	8b 45 3c             	mov    0x3c(%rbp),%eax
+  298237:	44 8b 55 28          	mov    0x28(%rbp),%r10d
+  29823b:	25 ff ff fc ff       	and    $0xfffcffff,%eax
+  298240:	45 85 d2             	test   %r10d,%r10d
+  298243:	0f 45 45 3c          	cmovne 0x3c(%rbp),%eax
+  298247:	89 45 3c             	mov    %eax,0x3c(%rbp)
+  29824a:	41 8b 86 d4 18 00 00 	mov    0x18d4(%r14),%eax
+  298251:	83 f8 03             	cmp    $0x3,%eax
+  298254:	0f 94 c2             	sete   %dl
+  298257:	83 f8 07             	cmp    $0x7,%eax
+  29825a:	0f 94 c0             	sete   %al
+  29825d:	09 d0                	or     %edx,%eax
+  29825f:	a8 01                	test   $0x1,%al
+  298261:	0f 84 69 f6 ff ff    	je     2978d0 <_nv006997rm+0x220>
+  298267:	81 65 48 ff ff ff f3 	andl   $0xf3ffffff,0x48(%rbp)
+  29826e:	81 4d 48 24 00 00 08 	orl    $0x8000024,0x48(%rbp)
+  298275:	e9 56 f6 ff ff       	jmp    2978d0 <_nv006997rm+0x220>
+  29827a:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  298280:	8b 55 34             	mov    0x34(%rbp),%edx
+  298283:	8b 45 34             	mov    0x34(%rbp),%eax
+  298286:	81 4d 4c 00 00 00 f0 	orl    $0xf0000000,0x4c(%rbp)
+  29828d:	81 ca 00 00 00 08    	or     $0x8000000,%edx
+  298293:	0d 00 00 00 04       	or     $0x4000000,%eax
+  298298:	e9 cb f5 ff ff       	jmp    297868 <_nv006997rm+0x1b8>
+  29829d:	0f 1f 00             	nopl   (%rax)
+  2982a0:	81 65 34 ff ff 3f fe 	andl   $0xfe3fffff,0x34(%rbp)
+  2982a7:	c1 e2 16             	shl    $0x16,%edx
+  2982aa:	e9 1f f7 ff ff       	jmp    2979ce <_nv006997rm+0x31e>
+  2982af:	8b 4d 44             	mov    0x44(%rbp),%ecx
+  2982b2:	8b 55 44             	mov    0x44(%rbp),%edx
+  2982b5:	8b 43 60             	mov    0x60(%rbx),%eax
+  2982b8:	81 c9 00 00 20 00    	or     $0x200000,%ecx
+  2982be:	81 e2 ff ff df ff    	and    $0xffdfffff,%edx
+  2982c4:	85 c0                	test   %eax,%eax
+  2982c6:	0f 44 ca             	cmove  %edx,%ecx
+  2982c9:	89 4d 44             	mov    %ecx,0x44(%rbp)
+  2982cc:	e9 6a f5 ff ff       	jmp    29783b <_nv006997rm+0x18b>
+  2982d1:	31 d2                	xor    %edx,%edx
+  2982d3:	b9 18 f6 10 00       	mov    $0x10f618,%ecx
+  2982d8:	31 f6                	xor    %esi,%esi
+  2982da:	4c 89 e7             	mov    %r12,%rdi
+  2982dd:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  2982e4:	00 
+  2982e5:	8b 93 e8 00 00 00    	mov    0xe8(%rbx),%edx
+  2982eb:	83 e2 0f             	and    $0xf,%edx
+  2982ee:	89 d1                	mov    %edx,%ecx
+  2982f0:	c1 e1 04             	shl    $0x4,%ecx
+  2982f3:	09 d1                	or     %edx,%ecx
+  2982f5:	c1 e2 08             	shl    $0x8,%edx
+  2982f8:	09 d1                	or     %edx,%ecx
+  2982fa:	c1 e2 04             	shl    $0x4,%edx
+  2982fd:	09 d1                	or     %edx,%ecx
+  2982ff:	c1 e2 04             	shl    $0x4,%edx
+  298302:	09 d1                	or     %edx,%ecx
+  298304:	c1 e2 04             	shl    $0x4,%edx
+  298307:	09 d1                	or     %edx,%ecx
+  298309:	c1 e2 04             	shl    $0x4,%edx
+  29830c:	09 d1                	or     %edx,%ecx
+  29830e:	c1 e2 04             	shl    $0x4,%edx
+  298311:	09 d1                	or     %edx,%ecx
+  298313:	39 c8                	cmp    %ecx,%eax
+  298315:	0f 84 52 fa ff ff    	je     297d6d <_nv006997rm+0x6bd>
+  29831b:	89 ca                	mov    %ecx,%edx
+  29831d:	be 18 f6 10 00       	mov    $0x10f618,%esi
+  298322:	4c 89 ff             	mov    %r15,%rdi
+  298325:	e8 00 00 00 00       	call   29832a <_nv006997rm+0xc7a>
+  29832a:	e9 3e fa ff ff       	jmp    297d6d <_nv006997rm+0x6bd>
+  29832f:	90                   	nop
+  298330:	8b 93 c8 00 00 00    	mov    0xc8(%rbx),%edx
+  298336:	be 70 f8 10 00       	mov    $0x10f870,%esi
+  29833b:	4c 89 ff             	mov    %r15,%rdi
+  29833e:	83 e2 0f             	and    $0xf,%edx
+  298341:	69 d2 11 11 11 11    	imul   $0x11111111,%edx,%edx
+  298347:	e8 00 00 00 00       	call   29834c <_nv006997rm+0xc9c>
+  29834c:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  298353:	e9 09 fa ff ff       	jmp    297d61 <_nv006997rm+0x6b1>
+  298358:	31 d2                	xor    %edx,%edx
+  29835a:	31 f6                	xor    %esi,%esi
+  29835c:	b9 9c f2 10 00       	mov    $0x10f29c,%ecx
+  298361:	4c 89 e7             	mov    %r12,%rdi
+  298364:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  29836b:	00 
+  29836c:	8b 93 04 01 00 00    	mov    0x104(%rbx),%edx
+  298372:	39 d0                	cmp    %edx,%eax
+  298374:	0f 84 79 f8 ff ff    	je     297bf3 <_nv006997rm+0x543>
+  29837a:	be 9c f2 10 00       	mov    $0x10f29c,%esi
+  29837f:	4c 89 ff             	mov    %r15,%rdi
+  298382:	e8 00 00 00 00       	call   298387 <_nv006997rm+0xcd7>
+  298387:	e9 67 f8 ff ff       	jmp    297bf3 <_nv006997rm+0x543>
+  29838c:	0f 1f 40 00          	nopl   0x0(%rax)
+  298390:	81 65 44 ff ef ff ff 	andl   $0xffffefff,0x44(%rbp)
+  298397:	81 65 4c ff ff ff fe 	andl   $0xfeffffff,0x4c(%rbp)
+  29839e:	45 85 ed             	test   %r13d,%r13d
+  2983a1:	0f 85 6f fd ff ff    	jne    298116 <_nv006997rm+0xa66>
+  2983a7:	8b 45 28             	mov    0x28(%rbp),%eax
+  2983aa:	85 c0                	test   %eax,%eax
+  2983ac:	75 5a                	jne    298408 <_nv006997rm+0xd58>
+  2983ae:	81 65 48 ff ff cf ff 	andl   $0xffcfffff,0x48(%rbp)
+  2983b5:	e9 75 fd ff ff       	jmp    29812f <_nv006997rm+0xa7f>
+  2983ba:	66 0f 1f 44 00 00    	nopw   0x0(%rax,%rax,1)
+  2983c0:	81 65 48 ff ff 3f fc 	andl   $0xfc3fffff,0x48(%rbp)
+  2983c7:	e9 24 f4 ff ff       	jmp    2977f0 <_nv006997rm+0x140>
+  2983cc:	0f 1f 40 00          	nopl   0x0(%rax)
+  2983d0:	be 0c f3 10 00       	mov    $0x10f30c,%esi
+  2983d5:	4c 89 ff             	mov    %r15,%rdi
+  2983d8:	e8 00 00 00 00       	call   2983dd <_nv006997rm+0xd2d>
+  2983dd:	8b 53 44             	mov    0x44(%rbx),%edx
+  2983e0:	e9 41 f6 ff ff       	jmp    297a26 <_nv006997rm+0x376>
+  2983e5:	8b 53 34             	mov    0x34(%rbx),%edx
+  2983e8:	be 08 f3 10 00       	mov    $0x10f308,%esi
+  2983ed:	4c 89 ff             	mov    %r15,%rdi
+  2983f0:	e8 00 00 00 00       	call   2983f5 <_nv006997rm+0xd45>
+  2983f5:	e9 1f f7 ff ff       	jmp    297b19 <_nv006997rm+0x469>
+  2983fa:	81 65 48 ff ff cf ff 	andl   $0xffcfffff,0x48(%rbp)
+  298401:	81 4d 48 00 00 20 00 	orl    $0x200000,0x48(%rbp)
+  298408:	45 09 c5             	or     %r8d,%r13d
+  29840b:	0f 84 1e fd ff ff    	je     29812f <_nv006997rm+0xa7f>
+  298411:	81 4d 48 00 00 00 30 	orl    $0x30000000,0x48(%rbp)
+  298418:	e9 32 fd ff ff       	jmp    29814f <_nv006997rm+0xa9f>
+  29841d:	4c 89 e7             	mov    %r12,%rdi
+  298420:	44 89 45 08          	mov    %r8d,0x8(%rbp)
+  298424:	44 89 4d 00          	mov    %r9d,0x0(%rbp)
+  298428:	e8 00 00 00 00       	call   29842d <_nv006997rm+0xd7d>
+  29842d:	84 c0                	test   %al,%al
+  29842f:	44 8b 45 08          	mov    0x8(%rbp),%r8d
+  298433:	44 8b 4d 00          	mov    0x0(%rbp),%r9d
+  298437:	74 07                	je     298440 <_nv006997rm+0xd90>
+  298439:	c7 45 1c 01 00 00 00 	movl   $0x1,0x1c(%rbp)
+  298440:	49 8b b6 d8 18 00 00 	mov    0x18d8(%r14),%rsi
+  298447:	e9 86 fc ff ff       	jmp    2980d2 <_nv006997rm+0xa22>
+  29844c:	81 65 48 ff ff 3f fd 	andl   $0xfd3fffff,0x48(%rbp)
+  298453:	81 4d 48 00 00 40 01 	orl    $0x1400000,0x48(%rbp)
+  29845a:	e9 12 fd ff ff       	jmp    298171 <_nv006997rm+0xac1>
+  29845f:	80 e2 7f             	and    $0x7f,%dl
+  298462:	e9 58 fb ff ff       	jmp    297fbf <_nv006997rm+0x90f>
+  298467:	83 ca 08             	or     $0x8,%edx
+  29846a:	e9 24 fb ff ff       	jmp    297f93 <_nv006997rm+0x8e3>
+  29846f:	83 65 48 db          	andl   $0xffffffdb,0x48(%rbp)
+  298473:	e9 58 f4 ff ff       	jmp    2978d0 <_nv006997rm+0x220>
+  298478:	31 d2                	xor    %edx,%edx
+  29847a:	31 f6                	xor    %esi,%esi
+  29847c:	b9 00 f3 10 00       	mov    $0x10f300,%ecx
+  298481:	4c 89 e7             	mov    %r12,%rdi
+  298484:	41 ff 94 24 58 24 00 	call   *0x2458(%r12)
+  29848b:	00 
+  29848c:	41 89 c5             	mov    %eax,%r13d
+  29848f:	8b 83 a4 00 00 00    	mov    0xa4(%rbx),%eax
+  298495:	41 81 cd 00 01 00 00 	or     $0x100,%r13d
+  29849c:	85 c0                	test   %eax,%eax
+  29849e:	75 50                	jne    2984f0 <_nv006997rm+0xe40>
+  2984a0:	44 89 ea             	mov    %r13d,%edx
+  2984a3:	be 00 f3 10 00       	mov    $0x10f300,%esi
+  2984a8:	4c 89 ff             	mov    %r15,%rdi
+  2984ab:	e8 00 00 00 00       	call   2984b0 <_nv006997rm+0xe00>
+  2984b0:	be 01 00 00 00       	mov    $0x1,%esi
+  2984b5:	4c 89 ff             	mov    %r15,%rdi
+  2984b8:	41 81 e5 ff fe ff ff 	and    $0xfffffeff,%r13d
+  2984bf:	e8 00 00 00 00       	call   2984c4 <_nv006997rm+0xe14>
+  2984c4:	8b 83 a4 00 00 00    	mov    0xa4(%rbx),%eax
+  2984ca:	85 c0                	test   %eax,%eax
+  2984cc:	75 34                	jne    298502 <_nv006997rm+0xe52>
+  2984ce:	4c 89 ff             	mov    %r15,%rdi
+  2984d1:	44 89 ea             	mov    %r13d,%edx
+  2984d4:	be 00 f3 10 00       	mov    $0x10f300,%esi
+  2984d9:	e8 00 00 00 00       	call   2984de <_nv006997rm+0xe2e>
+  2984de:	be 01 00 00 00       	mov    $0x1,%esi
+  2984e3:	4c 89 ff             	mov    %r15,%rdi
+  2984e6:	e8 00 00 00 00       	call   2984eb <_nv006997rm+0xe3b>
+  2984eb:	e9 6c f5 ff ff       	jmp    297a5c <_nv006997rm+0x3ac>
+  2984f0:	44 89 ea             	mov    %r13d,%edx
+  2984f3:	be 08 f3 10 00       	mov    $0x10f308,%esi
+  2984f8:	4c 89 ff             	mov    %r15,%rdi
+  2984fb:	e8 00 00 00 00       	call   298500 <_nv006997rm+0xe50>
+  298500:	eb 9e                	jmp    2984a0 <_nv006997rm+0xdf0>
+  298502:	44 89 ea             	mov    %r13d,%edx
+  298505:	be 08 f3 10 00       	mov    $0x10f308,%esi
+  29850a:	4c 89 ff             	mov    %r15,%rdi
+  29850d:	e8 00 00 00 00       	call   298512 <_nv006997rm+0xe62>
+  298512:	eb ba                	jmp    2984ce <_nv006997rm+0xe1e>
+  298514:	31 ff                	xor    %edi,%edi
+  298516:	e8 00 00 00 00       	call   29851b <_nv006997rm+0xe6b>
+  29851b:	be 01 00 00 00       	mov    $0x1,%esi
+  298520:	48 89 c2             	mov    %rax,%rdx
+  298523:	31 ff                	xor    %edi,%edi
+  298525:	e8 00 00 00 00       	call   29852a <_nv006997rm+0xe7a>
+  29852a:	e9 ee f1 ff ff       	jmp    29771d <_nv006997rm+0x6d>
+  29852f:	31 ff                	xor    %edi,%edi
+  298531:	e8 00 00 00 00       	call   298536 <_nv006997rm+0xe86>
+  298536:	be 01 00 00 00       	mov    $0x1,%esi
+  29853b:	48 89 c2             	mov    %rax,%rdx
+  29853e:	31 ff                	xor    %edi,%edi
+  298540:	e8 00 00 00 00       	call   298545 <_nv006997rm+0xe95>
+  298545:	b8 ff ff ff ff       	mov    $0xffffffff,%eax
+  29854a:	e9 14 fb ff ff       	jmp    298063 <_nv006997rm+0x9b3>
+  29854f:	90                   	nop

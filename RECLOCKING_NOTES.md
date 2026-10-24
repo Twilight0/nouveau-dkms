@@ -618,6 +618,61 @@ objects that link into a `.ko` which then dies at the BTF/objcopy stage
 separate incidents (stale tree diffed into the patch; stale objects
 linked into the module) both traced to reusing build directories.
 
+### 4.25 `nv-kernel.o` (340.108): `_nv006997rm` host-side DDR training sequence (2026-10-26)
+
+Linear `objdump` extraction (`testing/nv340_nv006997rm_disasm.txt`,
+reproducible via `tools/extract-nv6997-writes.py`) of the DDR
+link-training routine at `.text+0x2976b0` (~3.7 KB, 54 register
+writes), located via string-xref to the `Failed ... sddr3 link
+training` logs. Register-address convention: `ESI` = addr,
+`EDX` = value (struct field), `RDI` = adapter cookie, near `call` =
+write helper (values computed at runtime from VBIOS tables, so only
+the address order transfers — never the values).
+
+Write order (values are per-board, addresses are the finding):
+
+```
+0x10f60c → 0x10f304 → 0x10f328 → 0x10f320 → 0x10f30c → 0x10f304
+→ 0x10f300(MR0) → 0x10f224 → 0x10f290/94/98/2a0/2a4/2a8 (timings)
+→ 0x10f200 → 0x10f604/610/614 → 0x10f808 → 0x1373ec/f8
+→ 0x10f30c/304 (MR loop) → 0x10f328/320 → 0x10f340/344/348 (arbiter)
+→ 0x100750/100710/100c00 (host DMA fences) → 0x61c140 (display arbiter)
+→ 0x10f618 → 0x10f870(ZQ cal) → 0x10f29c
+→ 0x10f30c/308/300 (final MR0/MR1/MR2/MR3 + DLL reset pulse)
+```
+
+Gap vs our 390-derived `fexec` script (block 29, 900-up): **14 registers
+the script never programs** — `0x10f2a4/2a8` (extended timings),
+`0x10f304/308/30c` (full MR1/MR2/MR3 bank; script writes MR0/`0x10f300`
+only), `0x10f328`, `0x10f340/344/348`, `0x10f604/60c/618`,
+`0x61c140`, `0x100710/100750`. The **MR-bank gap is the prime suspect**
+for non-GF106 DDR3 boards (issues #2 GF119M 410M, #5 GF108M):
+Hynix/Samsung binnings needing different ODT/RTT_NOM get no MR1–MR3
+programming from our script. Fix direction: extend `fexec_code.inc`
+with the MR1/MR2/MR3 writes (values from the board's own VBIOS strap,
+never copied), plus the `0x10f2a4/2a8` timing pair — one new Falcon
+`cmd`, fail-safe refuse on unknown boards (Class B board registry).
+
+### 4.26 Chip-support order: Fermi → Kepler → Maxwell/Pascal GSP (2026-10-26)
+
+Goal is full support for chips whose blobs no longer build on current
+kernels — each generation on its own terms, not Fermi code ported over:
+1. **Fermi** (`GF100`–`GF119`, 390.157): proving ground. 340's fuller
+   host-side training sequence (§4.25) ports here; GF119/GF108 DDR3 via
+   Class B per-board scripts.
+2. **Kepler** (`GK104`–`GK208`, 470.256.02 pre-GSP paths): same
+   direct-MMIO family, reporters already filing GF119/GF108 reports.
+3. **Maxwell 1** (`GM107`/`GM108`, unsigned Falcon, in 390.157):
+   highest-value GSP-era target — port custom Falcon PMU + PLL/RAM
+   reclocking directly.
+4. **Maxwell 2 & Pascal** (`GM200`–`GP108`, signed PMU): GSP message
+   interface (`nvkm/subdev/gsp/`), not register replay. 470's
+   `_nv015478rm` (`.text+0xfa540`, 655 insns) confirms the split: it is
+   a firmware-RPC sequencer (~20 checked call steps, status-word
+   accumulation, zero direct `0x10fxxx` touches) — the MC programming
+   moved into `gsp.bin`. Reclock policy behind GSP RPC, unimplemented
+   in Nouveau; needs message-protocol RE, not MMIO traces.
+
 ## 5. Display Engine & 120 Hz Investigation
 
 ### 5.1 Bandwidth Limits on Fermi eDP
