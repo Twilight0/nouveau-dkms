@@ -51,12 +51,16 @@ This document tracks completed milestones, open engineering tasks, and the multi
 ## 🎯 Kernel & Hardware Subsystems Roadmap
 
 ### 1. Eliminating Screen Flashes During Clock Changes (True Zero-Flash VBlank Memory Reclocking)
-*(Full hardware specification in [`RECLOCKING_NOTES.md` §10.4](RECLOCKING_NOTES.md#104-nv-kernelo_binary-the-rm-sequencer-objseq--seqscript--memx-bytecode-emitter-api--zero-flash-vblank-pipeline))*
+*(Full hardware specification in [`RECLOCKING_NOTES.md` §10.4](RECLOCKING_NOTES.md#104-nv-kernelo_binary-the-rm-sequencer-objseq--seqscript--memx-bytecode-emitter-api--zero-flash-vblank-pipeline). 390-blob REA: `nv-kernel.o_binary` string-anchored functions `_nv010494rm` (`RmIsoHubMCLKSwitch`), `_nv012821rm` (`RMOnDemandVBlank`), `_nv012818rm` (`RMGlitchlessModeset`, 0xdb5 bytes), `_nv011282rm` (`RmNvsrFlickerControl`), `_nv019868rm` (`RMFermiMinGpmFifoDepth`); static objdump+reloc-xref route, Ghidra not required)*
 - [ ] **Move `WAIT_VBLANK` Inside `memx_exec_custom.fuc` (`< 50 ns` Reaction Latency)**:
   - Host-side `gf100_ram_wait_vblank()` still suffers from host scheduling/MMIO latency after VBlank onset, pushing the ~150–250 µs `STOP_FB` window past the ~370 µs VBlank budget.
-  - Poll the active CRTC's VBlank / raster status (`0x6160f8` / `0x616340`) directly inside the resident Falcon microcode immediately before asserting `STOP_FB` (`0x10a50c = 1` / `0x100c80 = 1`), matching `_nv031916rm` (opcode `0x14`).
-- [ ] **Pre-`STOP_FB` Display `ISOHUB` Critical Watermark Spool-Up (`_nv031916rm` / `_nv031860rm`)**:
-  - Boost `ISOHUB` (`0x616300+` / `0x610050`) watermarks to critical force-fill mode before `WAIT_VBLANK` so the display line buffer FIFO is 100% full before DRAM enters Self-Refresh, and restore normal watermarks after `RESTART_FB`.
+  - Poll the active CRTC's VBlank / raster status (`0x6160f8` / `0x616340`) directly inside the resident Falcon microcode immediately before asserting `STOP_FB` (`0x10a50c = 1` / `0x100c80 = 1`), matching `_nv031916rm` (opcode `0x14`). Blob's `_nv012821rm` is an on-demand gate (proceed-only-if-safe-window, else defer) — replicate the deferral, not just the poll.
+- [ ] **Pre-`STOP_FB` Display `ISOHUB` Critical Watermark Spool-Up (`_nv031916rm` / `_nv031860rm`, `_nv010494rm`)**:
+  - Boost `ISOHUB` (`0x616300+` / `0x610050`) watermarks to critical force-fill mode before `WAIT_VBLANK` so the display line buffer FIFO is 100% full before DRAM enters Self-Refresh, and restore normal watermarks after `RESTART_FB`. `_nv010494rm` (`.text+0xebac0`, string-xref at `+0xebba7`) is the blob's hub-switch sequencer — disassemble for exact order.
+- [ ] **GPM FIFO Minimum-Depth Guard (`_nv019868rm`, `RMFermiMinGpmFifoDepth`)**:
+  - Check/program display FIFO watermark depths before retraining (blob uses `$0x700`/`$0x6050`/`$0x100`-class constants); abort-or-defer the reclock if margins are below threshold instead of retraining blindly. Nouveau currently inherits whatever the VBIOS left — thinnest margin is at 120 Hz scanout during retrain.
+- [ ] **Treat Glitchless as a Modeset Property (`_nv012818rm`, `RMGlitchlessModeset`)**:
+  - Blob sequences display-timing changes through a dedicated state machine that keeps the pipeline fed; our reclock bypasses modeset entirely. Long-term: route MCLK transitions through the atomic commit path instead of firing them from the governor side-channel.
 - [ ] **FB Partition Write-Buffer Flush (`0x13d7f4 + (part << 6)`, `_nv031754rm` Opcode `0x3a`)**:
   - Emit the per-partition write-buffer drain after programming PHY DLL registers (`0x10f824`) and before releasing `STOP_FB`.
 - [ ] **Pre-Warm Falcon Executor at Boot/Resume & Decouple PCIe Retraining**:
