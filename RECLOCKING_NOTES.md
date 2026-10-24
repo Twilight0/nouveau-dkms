@@ -618,6 +618,18 @@ objects that link into a `.ko` which then dies at the BTF/objcopy stage
 separate incidents (stale tree diffed into the patch; stale objects
 linked into the module) both traced to reusing build directories.
 
+### 4.25b Source-artifact co-location rule (2026-10-24)
+
+Every derived artifact committed to the tree must sit beside the source
+or script that produced it: `.fuc` next to its assembled `.inc`,
+decoder scripts next to their traces (`tools/extract-nv6997-writes.py`
++ `testing/nv340_nv006997rm_disasm.txt` is the template). Rationale:
+`tmp/memx_exec_custom.fuc` (the 559-byte envyas source behind
+`fexec_code.inc`) was a scratch file that never got committed — the
+binary survived, the editable source didn't, and any future microcode
+change now starts with a disassembly round-trip. Never again: no
+`tmp/`-only sources for anything that ships in a build.
+
 ### 4.25 `nv-kernel.o` (340.108): `_nv006997rm` host-side DDR training sequence (2026-10-26)
 
 Linear `objdump` extraction (`testing/nv340_nv006997rm_disasm.txt`,
