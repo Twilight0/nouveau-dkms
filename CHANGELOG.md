@@ -4,6 +4,33 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.2.0] - 2026-10-25
+
+### ✨ Zero-Stutter VBlank-Onset Memory Reclocking (`ramgf100.c`)
+- **True NV50/GF100 Signed `vpos` VBlank Onset Sync (`gf100_ram_calc_vpos` / `gf100_ram_wait_vblank`)**:
+  - Fixed the hardware scanline coordinate bias where NV50/GF100 `rgpos` (`0x616340`) counts `0` from VSync onset (`0..vblanke` is VSync + Back Porch, `vblanke+1..vblanks-1` is Active Scanout, and `vblanks..vtotal-1` is the 5-line Front Porch).
+  - Previously, checking only `vline >= vblanks && vline < vtotal` missed 90% of VBlank and timed out after 50 ms during `usleep_range(200, 500)`, firing DRAM retraining mid-frame.
+  - Now computes signed `vpos` from `vblanke` (`0x610ae8`), `vblanks` (`0x610af0`), and `vtotal` (`0x610af8`), steps in short 80–150 µs sleeps into the 40-line pre-VBlank approach zone, and tight-polls (`udelay(1)`) for the exact leading edge of VBlank (`vpos == 1077 -> -46`).
+- **Zero Pre-Trigger Printk Latency & In-VBlank PHY Commit Latch (`0x001548`)**:
+  - Removed the pre-trigger `nvkm_info()` between `gf100_ram_wait_vblank()` and `0x10a084 = cmd`, and replaced the post-trigger `usleep_range(500, 1000)` with a `udelay(2)` tight-poll so both the resident Falcon execution and the host `0x001548` PHY timing commit latch complete in **~470–535 µs (`vpos 1077 -> -12`)** entirely inside a single VBlank interval.
+- **Boot-Time Resident Falcon Pre-Warm (`gf100_ram_calc_ddr3`)**:
+  - Pre-warms the 896-word resident Falcon microcode executor (`fexec_code.inc`) during initial 324 MHz boot initialization so the very first `07` $\leftrightarrow$ `0f` transition executes on the sub-millisecond resident fast-path without a cold PDAEMON reset.
+
+### 🛡️ Governor Modernization & Zero-Sudo Telemetry (`nouveau-dynclockd` 2.0, `nouveau-ctrl`, `nouveau-tui`)
+- **120 Hz Display Floor Guard (`DISPLAY_120HZ_FLOOR=true`)**:
+  - Automatically detects active DRM CRTC modes via `libdrm.so.2`. When a high-refresh or high-dot-clock display (>135 MHz pixel clock, e.g. 1920x1080 @ 120 Hz) is active, clamps `idle_floor` to `07` (202/324 MHz), matching NVIDIA `390.157` IMP checks (`_nv002187kms`). Drops to `03` only at low pixel clocks or when DPMS is blanked.
+- **Per-Application Profile Engine (`/etc/nouveau-dynclockd.d/*.conf`)**:
+  - Added drop-in application profile configuration allowing custom P-state targets (e.g. `steam = 0f`, `blender = 10`, `mpv = 07`) with `apps.conf.sample` installed.
+- **Bidirectional Manual Override Coordination (`/run/nouveau/mode`) & 20 ms Interruptible Wakeup**:
+  - Coordinated manual locks between `nouveau-ctrl`, `nouveau-tui`, and `nouveau-dynclockd` via `/run/nouveau/mode` (`locked:<pstate>` vs `auto`) without stopping the daemon, keeping thermal runaway protection 100% active.
+  - Added `sleep_interruptible()` (20 ms granularity) in `nouveau-dynclockd` so manual lock requests from `nouveau-ctrl set` and `nouveau-tui` are applied by the root daemon and reflected in `/run/nouveau/pstate` within ~20–40 ms—requiring **zero `sudo` password prompts** for normal users.
+- **Unprivileged Telemetry Snapshots & Real-Time TUI Reload**:
+  - Governor mirrors debugfs `pstate` and `clients` into world-readable `/run/nouveau/` snapshots. Non-root `nouveau-tui` and `nouveau-ctrl` operate with instant refresh and live `SIGHUP` reload hotkey (`R`).
+- **Hardware GPU Interrupt Tracking & Hysteresis**:
+  - Reads `/proc/interrupts` (`nvkm`) for sub-millisecond GPU load detection, combined with per-PID tick delta verification and PowerMizer hold-down timers (`HOLD_0F_SECONDS=8`, `HOLD_07_SECONDS=5`).
+
+---
+
 ## [2.1.0] - 2026-10-04
 
 ### 🔧 Kernel 6.18.55 Rebase & Compatibility

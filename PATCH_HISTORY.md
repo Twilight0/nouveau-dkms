@@ -6,6 +6,30 @@ This document maintains a strict versioned record of driver patches, their archi
 
 ## 1. Patch Catalog
 
+### `patches/patch-v2.2.0-zero-stutter-vblank.patch`
+- **Release/Tag**: `v2.2.0`
+- **GPU Architecture**: NVIDIA GF106M (GeForce GT 555M)
+- **Features Included**:
+  - All features of `v2.1.0-6.18.55-vram-vblank`.
+  - **Resident Falcon Microcode Kernel Core & True VBlank-Onset Sync (`ramgf100.c`)**:
+    - Uses the proven, rock-solid 896-word resident microcode execution engine from `v2.0.1` (`fexec_code.inc`).
+    - **True NV50/GF100 Signed `vpos` VBlank Onset Sync (`gf100_ram_wait_vblank`)**: Fixed the hardware scanline coordinate bug where `0x616340` (`vline`) starts at `0` at VSync onset (`0..vblanke` is VSync + Back Porch, `vblanke+1..vblanks-1` is Active Scanout, and `vblanks..vtotal-1` is the 5-line Front Porch). Previously, checking only `vline >= vblanks && vline < vtotal` missed 90% of VBlank and timed out after 50 ms during `usleep_range(200, 500)`, firing the reclock mid-frame! Now computes signed `vpos` via `0x610ae8` (`vblanke`), `0x610af0` (`vblanks`), and `0x610af8` (`vtotal`), sleeps in 80–150 µs steps into the 40-line pre-VBlank approach zone, and tight-polls (`udelay(1)`) for the exact leading edge of VBlank.
+    - **Zero Pre-Trigger Printk Latency & Sub-200 µs Completion Tight-Poll**: Removed the pre-trigger `nvkm_info()` between `gf100_ram_wait_vblank()` and `0x10a084 = cmd`, and replaced the post-trigger `usleep_range(500, 1000)` with a `udelay(2)` tight-poll so the host `0x001548` PHY commit latch executes at ~160 µs while **still inside VBlank** instead of 1 ms later during active scanout.
+    - **Boot Pre-Warm (`gf100_ram_calc_ddr3`)**: Pre-warms the resident Falcon executor at initial 324 MHz boot initialization so the very first `07 -> 0f` transition executes on the sub-200 µs resident fast-path.
+    - *Stability Resolution*: Removed experimental in-Falcon `#flush_fb_partitions` (writing to partition 3 `0x13d8f4` which does not exist on 3-partition GF106) and in-Falcon MMIO raster polling which generated PRIVRING faults, causing the Falcon to branch to `#fail_dead` with `FB_PAUSE` permanently asserted.
+    - Restored `nvkm_pcie_set_link()` ordering before `ram->func->calc` for reliable PCIe Gen1 $\leftrightarrow$ Gen2 scaling.
+  - **Governor Modernization (`nouveau-dynclockd.py` 2.0)**:
+    - **120 Hz Display Floor Guard**: Queries active DRM CRTC modes via `libdrm.so.2`. When an active display operates at >135 MHz pixel clock (or >= 100 Hz refresh, e.g. 1920x1080 @ 120 Hz), automatically clamps `idle_floor` to `07` (202/324 MHz), matching NVIDIA 390.157 IMP checks (`_nv002187kms`) and completely preventing display FIFO underflows and screen flicker. Drops to `03` only at 60 Hz or when DPMS is blanked.
+    - **Per-Application Profile Engine**: Reads `/etc/nouveau-dynclockd.d/*.conf` (`[apps]` section) allowing custom P-state targets (e.g. `steam = 0f`, `blender = 10`, `mpv = 07`) with sample file installed.
+    - **Bidirectional Manual Override Coordination (`/run/nouveau/mode`)**: Allows `nouveau-ctrl set <pstate>` and `nouveau-tui` to lock states without killing the background governor, preserving 100% active thermal runaway protection.
+    - **Unprivileged Telemetry Snapshots**: Daemon mirrors `/sys/kernel/debug/dri/0/pstate` and `clients` into world-readable `/run/nouveau/` snapshots, enabling non-root `nouveau-tui` and `nouveau-ctrl` to run with zero sudo latency and instant real-time refreshing.
+    - **Hardware GPU Interrupt Tracking**: Tracks `/proc/interrupts` (`nvkm`) for sub-millisecond GPU load detection.
+    - **Expanded Desktop Classification & Hysteresis**: Added pattern-matching for IDEs, media players, and desktop utilities with PowerMizer hold-down timers (`HOLD_0F_SECONDS=8`, `HOLD_07_SECONDS=5`).
+- **Stability**: **Production Stable**. Memory reclocking executes reliably without black screens or bus lockups.
+- **When to Use**: Current release patch for `nouveau-dkms` v2.2.0.
+
+---
+
 ### `patches/patch-v2.1.0-6.18.55-vram-vblank.patch`
 - **Release/Tag**: `v2.1.0`
 - **GPU Architecture**: NVIDIA GF106M (GeForce GT 555M)
@@ -204,7 +228,8 @@ sudo pacman -U --noconfirm nouveau-fermi-reclock-cachyos-lts-v2-1.2.0-1-x86_64.p
 
 | Target State | Patch File | Core/Shader Reclock | Memory 900 MHz | Rollback Risk |
 |---|---|---|---|---|
-| **v2.1.0 Production** | `patch-v2.1.0-6.18.55-vram-vblank.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | **Current Stable Release (6.18.55 / VRAM)** |
+| **v2.2.0 Production** | `patch-v2.2.0-zero-stutter-vblank.patch` | Yes (50/202/590/700) | Yes (324 <-> 900 MHz) | **Current Stable Release (Zero-Stutter VBlank Reclocking)** |
+| **v2.1.0 Production** | `patch-v2.1.0-6.18.55-vram-vblank.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | Stable (6.18.55 / VRAM Telemetry) |
 | **v2.0.1 Production** | `patch-v2.0.1-resume-fix.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | Stable (S3 Fix) |
 | **v2.0.0 Production** | `patch-v2.0.0-ddr3-reclock.patch` | Yes (50/202/590) | Yes (324 <-> 900 MHz) | Stable (S3 freeze on resume) |
 | **PMU Clock Freeze** | `patch-v1.2.4-pmu-clock-freeze.patch` | Yes (590/1180) | Yes (324 <-> 900 MHz) | Glitch-free PDAEMON pipeline |

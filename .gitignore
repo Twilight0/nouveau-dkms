@@ -5,6 +5,7 @@ pkg/
 __pycache__/
 *.log
 *.tmp
+nohup.out
 
 # Ignore uncompressed raw trace dumps in testing (keep .xz versions)
 testing/*.raw

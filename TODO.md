@@ -43,6 +43,12 @@ This document tracks completed milestones, open engineering tasks, and the multi
   - Added exact in-kernel TTM VRAM accounting (`VRAM: <used> MiB / <total> MiB used` on debugfs `pstate`) and unprivileged `/run/nouveau/vram` snapshot for `nouveau-ctrl` and `nouveau-tui`.
   - Added `BATTERY_CAP=true` AC/DC power-supply awareness to `nouveau-dynclockd` (capping to `07` on battery, allowing `0f`/`10` on AC).
   - Added initial host-side `gf100_ram_wait_vblank()` (`NvFermiVblankSync=1`).
+- [x] **`v2.2.0` — Zero-Stutter Signed-`vpos` VBlank Memory Reclocking & Zero-Sudo Dynamic Governor**:
+  - Implemented true NV50/GF100 signed `vpos` calculation in `ramgf100.c` (`gf100_ram_calc_vpos()` / `gf100_ram_wait_vblank()`), stepping in 80–150 µs sleeps to the 40-line approach zone and tight-polling (`udelay(1)`) the exact VBlank leading edge (`vpos 1077 -> -46`).
+  - Removed pre-trigger printk delays and tight-polled resident Falcon completion (`udelay(2)`), latching host `0x001548` DDR3 PHY timing commit in 477–535 µs entirely within VBlank.
+  - Added boot-time resident Falcon pre-warm (`cmd = 0`) at 324 MHz in `gf100_ram_calc_ddr3()`.
+  - Upgraded `nouveau-dynclockd.py` 2.0 with unprivileged `/run/nouveau/mode` coordination, real-time unprivileged telemetry snapshots, 120 Hz display floor guard (`>= 07`), and `/etc/nouveau-dynclockd.d/*.conf` per-application profiles.
+  - Co-located Falcon assembly source `fexec_code.fuc` with `fexec_code.inc` and added `tools/build-fexec.py`.
 - [x] **Decompilation of `NVIDIA-Linux-x86_64-390.157` (`nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`)**:
   - Solved the Fermi `PDAEMON` context-switch handshake (`_nv029647rm`), `OBJSEQ` opcode `0x3a` + `0x13d7f4` partition write-buffer flush (`_nv031754rm`), zero-flash `ISOHUB` + in-Falcon `WAIT_VBLANK` (`_nv031916rm`), `0x132004 = 0x10012702` P3 `650 MHz` formula (`_nv010738rm`), and 120 Hz 3D Vision eDP `8 bpc → 6 bpc` step-down (`_nv002219kms`). Documented in [`RECLOCKING_NOTES.md` §10](RECLOCKING_NOTES.md#10-concrete-reverse-engineering-findings-from-nvidia-390157-nv-modeset-kernelo_binary--nv-kernelo_binary).
 
@@ -112,14 +118,14 @@ This document tracks completed milestones, open engineering tasks, and the multi
 ## 🔋 Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)
 
 - [ ] **Replace `/proc` CPU-Tick Scanning with Hardware GPU Load Counters (`0x10a600..0x10a610`)**:
-  - Replace `get_monitored_app_ticks()` `/proc` scanning with a single `< 0.05 ms` read of hardware `GR %`, `FB %`, and `VDEC %` utilization counters.
-- [ ] **120 Hz Display-Aware Idle Floor (`>= 07`)**:
+  - Replace `get_monitored_app_ticks()` `/proc` scanning with a single `< 0.05 ms` read of hardware `GR %`, `FB %`, and `VDEC %` utilization counters. *(Hardware interrupt delta tracking implemented in `v2.1.1` via `/proc/interrupts` `nvkm`)*.
+- [x] **120 Hz Display-Aware Idle Floor (`>= 07`)**:
   - Automatically clamp `IDLE_STATE` to `07` (`405 MHz` `dispclk`, `324 MHz` DDR3) when a `> 135 MHz` pixel-clock mode (120 Hz) is active, dropping to `03` only at 60 Hz or DPMS off.
-- [ ] **5-Tier Scaling Ladder (`03` ↔ `07` ↔ `0a` ↔ `0f` ↔ `10`) with Hold-Down Timers**:
+- [x] **5-Tier Scaling Ladder (`03` ↔ `07` ↔ `0a` ↔ `0f` ↔ `10`) with Hold-Down Timers**:
   - Scale across all 5 states based on hardware `GR`/`FB`/`VDEC` load with `5–8 s` PowerMizer-style hold-down timers so brief loading screens never trigger mid-game memory reclocks.
-- [ ] **Manual Override Coordination (`/run/nouveau/mode`)**:
+- [x] **Manual Override Coordination (`/run/nouveau/mode`)**:
   - Coordinate `nouveau-ctrl set <pstate>` and `nouveau-tui` with `nouveau-dynclockd` via `/run/nouveau/mode` (`locked:<pstate>` vs `auto`) so manual locks are not overwritten on the next daemon poll while retaining thermal runaway protection.
-- [ ] **Event-Driven Wakeups & Per-Application Profiles (`/etc/nouveau-dynclockd.d/`)**:
+- [x] **Event-Driven Wakeups & Per-Application Profiles (`/etc/nouveau-dynclockd.d/`)**:
   - Support netlink/udev power-supply events and per-app P-state rules (Steam/Proton → `0f`/`10`, MPV/VLC → `07`/`0a`, OBS → `0a`/`0f`).
 
 ---

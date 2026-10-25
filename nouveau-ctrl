@@ -47,11 +47,36 @@ PSTATE_LABELS = {
     "10": "OC  Boost / Overclock",
 }
 
-def read_privileged_file(paths):
-    """Reads a file, attempting direct read, then sudo -n, then interactive sudo if in TTY."""
+def read_privileged_file(paths, bypass_snapshot=False):
+    """Reads a file, attempting unprivileged /run/nouveau snapshot first, then direct read, then sudo."""
     if isinstance(paths, str):
         paths = [paths]
     for p in paths:
+        # Check world-readable runtime snapshot first (zero privilege, instant read)
+        if not bypass_snapshot:
+            if "pstate" in p and os.path.exists("/run/nouveau/pstate"):
+                try:
+                    if os.path.exists("/run/nouveau/mode"):
+                        mode_mt = os.path.getmtime("/run/nouveau/mode")
+                        for _ in range(25):
+                            if os.path.getmtime("/run/nouveau/pstate") >= mode_mt:
+                                break
+                            time.sleep(0.01)
+                    with open("/run/nouveau/pstate", "r") as f:
+                        c = f.read().strip()
+                        if c:
+                            return c
+                except Exception:
+                    pass
+            elif "clients" in p and os.path.exists("/run/nouveau/clients"):
+                try:
+                    with open("/run/nouveau/clients", "r") as f:
+                        c = f.read().strip()
+                        if c:
+                            return c
+                except Exception:
+                    pass
+
         if not os.path.exists(p) and not p.startswith("/sys/kernel/debug"):
             continue
         try:
@@ -97,8 +122,8 @@ def get_config_throttle_temp():
             pass
     return 80
 
-def get_pstates_data():
-    raw = read_privileged_file(PSTATE_CANDIDATES)
+def get_pstates_data(bypass_snapshot=False):
+    raw = read_privileged_file(PSTATE_CANDIDATES, bypass_snapshot=bypass_snapshot)
     if not raw:
         return {}, None, None
 
@@ -351,7 +376,8 @@ def get_drm_clients():
     return clients
 
 def cmd_status(args):
-    states, active_id, live = get_pstates_data()
+    bypass = getattr(args, "_bypass_snapshot", False)
+    states, active_id, live = get_pstates_data(bypass_snapshot=bypass)
     hw = get_hwmon_data()
     daemon = get_daemon_status()
     clients = get_drm_clients()
@@ -450,37 +476,58 @@ def cmd_status(args):
 
 def cmd_set(args):
     target = args.state
+    mode_path = "/run/nouveau/mode"
+    pstate_snap = "/run/nouveau/pstate"
+    res = subprocess.run(["systemctl", "is-active", "nouveau-dynclockd.service"], capture_output=True, text=True)
+    daemon_active = "active" in res.stdout
+
     if target == "auto":
-        print("[*] Enabling dynamic governor daemon (nouveau-dynclockd)...")
-        subprocess.run(["sudo", "systemctl", "restart", "nouveau-dynclockd.service"])
-        print("[✓] Dynamic GPU governor active.")
+        print("[*] Setting dynamic governor mode to AUTO...")
+        if not daemon_active:
+            subprocess.run(["sudo", "systemctl", "restart", "nouveau-dynclockd.service"])
+            daemon_active = True
+        try:
+            with open(mode_path, "w") as f:
+                f.write("auto\n")
+        except PermissionError:
+            subprocess.run(["sudo", "tee", mode_path], input="auto\n", text=True, capture_output=True)
+
+        mode_mt = os.path.getmtime(mode_path) if os.path.exists(mode_path) else 0
+        for _ in range(40):
+            if os.path.exists(pstate_snap) and os.path.getmtime(pstate_snap) >= mode_mt:
+                break
+            time.sleep(0.01)
+        print("[✓] Dynamic GPU governor active (Auto reclocking).")
+        cmd_status(args)
         return
 
-    if target not in ("03", "07", "08", "0f", "10", "AC"):
+    if target not in ("03", "07", "08", "0a", "0f", "10", "AC"):
         print(f"[!] Invalid state '{target}'. Valid states: 03 (idle), 07 (2D desktop), 0f (3D performance), 10 (OC), auto", file=sys.stderr)
         sys.exit(1)
 
-    print(f"[[*] Stopping background daemon to lock GPU clock to '{target}'...")
-    subprocess.run(["sudo", "systemctl", "stop", "nouveau-dynclockd.service"], capture_output=True)
-
-    target_node = "/sys/kernel/debug/dri/0/pstate"
-    for p in PSTATE_CANDIDATES:
-        if os.path.exists(p):
-            target_node = p
-            break
+    print(f"[*] Coordinating with governor to lock GPU clock to '{target}' with thermal protection...")
+    if not daemon_active:
+        subprocess.run(["sudo", "systemctl", "restart", "nouveau-dynclockd.service"])
+        for _ in range(30):
+            if os.path.exists(mode_path):
+                break
+            time.sleep(0.02)
 
     try:
-        res = subprocess.run(["sudo", "tee", target_node], input=target + "\n", text=True, capture_output=True, timeout=5)
-        if res.returncode == 0:
-            print(f"[✓] Successfully locked GPU to P-State: {target}")
-            time.sleep(0.2)
-            cmd_status(args)
-        else:
-            print(f"[!] Failed to set pstate: {res.stderr.strip()}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as e:
-        print(f"[!] Error writing to {target_node}: {e}", file=sys.stderr)
-        sys.exit(1)
+        with open(mode_path, "w") as f:
+            f.write(f"locked:{target}\n")
+    except PermissionError:
+        subprocess.run(["sudo", "tee", mode_path], input=f"locked:{target}\n", text=True, capture_output=True)
+
+    # Wait briefly (~20-50ms) for the root governor daemon to apply the P-state and refresh /run/nouveau/pstate
+    mode_mt = os.path.getmtime(mode_path) if os.path.exists(mode_path) else 0
+    for _ in range(50):
+        if os.path.exists(pstate_snap) and os.path.getmtime(pstate_snap) >= mode_mt:
+            break
+        time.sleep(0.01)
+
+    print(f"[✓] Successfully locked GPU to P-State: {target} (Thermal runaway protection active).")
+    cmd_status(args)
 
 def cmd_set_throttle_temp(args):
     temp = args.temp

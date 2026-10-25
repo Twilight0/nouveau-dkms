@@ -785,7 +785,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  };
  
  static void
-@@ -123,6 +128,356 @@ gf100_ram_train(struct gf100_ramfuc *fuc
+@@ -123,6 +128,485 @@ gf100_ram_train(struct gf100_ramfuc *fuc
  	}
  }
  
@@ -844,48 +844,126 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +
 +static bool fexec_resident_running = false;
 +
-+/* VBlank-aligned memory reclock (TODO: Zero-Pause Switching).
-+ * Poll head scanline (NV50 rgpos 0x616340 + head*0x800) until inside
-+ * vertical blanking (vline >= vblanks from 0x610af0 / vtotal 0x610af8).
-+ * Best-effort: fail-open on timeout / display off / NvFermiVblankSync=0.
-+ * The 5ms Falcon retraining cannot fit into the ~0.4ms 120Hz blanking,
-+ * but starting at blanking onset confines the pause to blanking + top
-+ * lines instead of mid-frame tear. */
-+static void
-+gf100_ram_wait_vblank(struct nvkm_device *device)
++/* VBlank-aligned memory reclock (Zero-Tear VBlank Onset Sync).
++ * On NV50/GF100 display hardware (dispnv50/head.c, nouveau_display.c),
++ * rgpos vline (0x616340) starts at 0 at VSync onset:
++ *   - 0 .. vblanke (0x610ae8 >> 16)         : VSync + VBlank back porch
++ *   - vblanke + 1 .. vblanks - 1            : Active display scanout
++ *   - vblanks (0x610af0 >> 16) .. vtotal - 1: VBlank front porch
++ * Signed vpos (matching nouveau_display.c calc()) is negative throughout
++ * Vertical Blanking (-vblank_lines .. -1) and 0 .. vdisplay-1 during active
++ * scanout. Waiting only for [vblanks .. vtotal) missed 90% of VBlank and
++ * timed out after 50ms when sleeping 200-500us.
++ * Here we sleep in short 80-150us steps until the pre-VBlank approach zone
++ * (last 40 active lines) or early VBlank (at least 22 blanking lines left),
++ * then tight-poll with udelay(1) for the exact leading edge of VBlank so both
++ * the ~160us Falcon transition and the host 0x001548 PHY commit latch finish
++ * 100% inside a single VBlank interval. */
++static inline int
++gf100_ram_calc_vpos(u32 vblanks, u32 vblanke, u32 vtotal, u32 vline,
++		    int *vblank_lines, int *vdisplay)
++{
++	int vpos = (int)vline;
++	int blines;
++
++	if (vblanke >= vblanks) {
++		if (vpos >= (int)vblanks)
++			vpos -= (int)vtotal;
++		blines = (int)(vblanke - vblanks + 1);
++	} else {
++		if (vpos >= (int)vblanks)
++			vpos -= (int)vtotal;
++		vpos -= (int)vblanke + 1;
++		blines = (int)(vtotal - vblanks + vblanke + 1);
++	}
++	if (vblank_lines)
++		*vblank_lines = blines;
++	if (vdisplay)
++		*vdisplay = (int)vtotal - blines;
++	return vpos;
++}
++
++static int
++gf100_ram_read_vpos(struct nvkm_device *device, int head)
++{
++	u32 state_off = head * 0x540;
++	u32 rgpos_off = head * 0x800;
++	u32 vblanke = (nvkm_rd32(device, 0x610ae8 + state_off) >> 16) & 0xffff;
++	u32 vblanks = (nvkm_rd32(device, 0x610af0 + state_off) >> 16) & 0xffff;
++	u32 vtotal  = (nvkm_rd32(device, 0x610af8 + state_off) >> 16) & 0xffff;
++	u32 vline   = nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff;
++
++	if (vtotal == 0 || vblanks == 0 || vblanks >= vtotal)
++		return 0;
++	return gf100_ram_calc_vpos(vblanks, vblanke, vtotal, vline, NULL, NULL);
++}
++
++static int
++gf100_ram_wait_vblank(struct nvkm_device *device, int *out_head)
 +{
 +	struct nvkm_subdev *subdev;
 +	unsigned long deadline;
-+	int head;
++	u32 heads;
++	int head, i;
 +
++	if (out_head)
++		*out_head = -1;
 +	if (!nvkm_boolopt(device->cfgopt, "NvFermiVblankSync", true))
-+		return;
++		return 0;
 +	if (!device->disp || !device->fb)
-+		return;
++		return 0;
 +	subdev = &device->fb->subdev;
++	heads = nvkm_rd32(device, 0x610050);
 +
 +	for (head = 0; head < 2; head++) {
-+		u32 vtotal, vblanks, vline;
++		u32 vtotal, vblanks, vblanke, vline;
 +		u32 state_off = head * 0x540;
 +		u32 rgpos_off = head * 0x800;
++		int vblank_lines = 0, vdisplay = 0, vpos = 0;
 +
++		if (heads && !(heads & (2 << (head << 3))))
++			continue;
++
++		vblanke = (nvkm_rd32(device, 0x610ae8 + state_off) >> 16) & 0xffff;
 +		vblanks = (nvkm_rd32(device, 0x610af0 + state_off) >> 16) & 0xffff;
 +		vtotal  = (nvkm_rd32(device, 0x610af8 + state_off) >> 16) & 0xffff;
 +		if (vtotal == 0 || vblanks == 0 || vblanks >= vtotal)
 +			continue;
 +
-+		deadline = jiffies + msecs_to_jiffies(50);
++		if (out_head)
++			*out_head = head;
++
++		deadline = jiffies + msecs_to_jiffies(30);
 +		while (time_before(jiffies, deadline)) {
 +			vline = nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff;
-+			if (vline >= vblanks && vline < vtotal)
-+				return;
-+			usleep_range(200, 500);
++			vpos = gf100_ram_calc_vpos(vblanks, vblanke, vtotal, vline,
++						   &vblank_lines, &vdisplay);
++
++			/* Early VBlank window: inside VBlank with >= 22 lines remaining */
++			if (vpos < 0 && (-vpos >= 22 || -vpos >= (vblank_lines * 2) / 3))
++				return vpos;
++
++			/* Pre-VBlank approach zone: last 40 active lines before VBlank onset.
++			 * Tight-poll in 1us increments for the exact leading edge of VBlank. */
++			if (vdisplay > 45 && vpos >= vdisplay - 40) {
++				for (i = 0; i < 650; i++) {
++					vline = nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff;
++					vpos = gf100_ram_calc_vpos(vblanks, vblanke, vtotal, vline,
++								   &vblank_lines, &vdisplay);
++					if (vpos < 0 || vpos >= vdisplay - 2)
++						return vpos;
++					udelay(1);
++				}
++				return vpos;
++			}
++
++			usleep_range(80, 150);
 +		}
-+		nvkm_debug(subdev, "DDR3: vblank wait timeout on head %d (vline %u, blank %u-%u)\n",
-+			   head, nvkm_rd32(device, 0x616340 + rgpos_off) & 0xffff,
-+			   vblanks, vtotal);
-+		return;
++		nvkm_debug(subdev, "DDR3: vblank wait timeout on head %d (vpos %d, blank %u..%u/%u)\n",
++			   head, vpos, vblanks, vblanke, vtotal);
++		return vpos;
 +	}
++	return 0;
 +}
 +
 +static int
@@ -894,13 +972,12 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +	struct nvkm_subdev *subdev = &ram->base.fb->subdev;
 +	struct nvkm_device *device = subdev->device;
 +	unsigned long deadline;
-+	u32 done, cur, pmc, cmd;
++	u32 done = 0, cur = 0, pmc, cmd;
++	int i, sync_head = -1, vpos_start = 0, vpos_end = 0;
++	ktime_t t_start;
++	s64 exec_us;
 +
 +	cmd = (freq == 900000) ? 1 : 2;
-+
-+	/* Start retraining at vblank onset so the ~5ms pause lands on
-+	 * blanking + top lines instead of mid-frame (best-effort). */
-+	gf100_ram_wait_vblank(device);
 +
 +	/* Check if resident executor is already running and ready in Falcon IMEM */
 +	if (fexec_resident_running) {
@@ -918,18 +995,19 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +
 +	if (fexec_resident_running) {
 +		u32 uc_ctrl = nvkm_rd32(device, 0x10a100);
-+		u32 s0 = nvkm_rd32(device, 0x10a080);
-+		u32 s1 = nvkm_rd32(device, 0x10a084);
 +		u32 pc = nvkm_rd32(device, 0x10aff0);
-+		u32 st = nvkm_rd32(device, 0x10a128);
 +
-+		nvkm_info(subdev, "DDR3: resident fast-path request: cmd=%u (target %u kHz) [UC=%08x S0=%08x S1=%08x PC=%08x ST=%08x]\n",
-+			  cmd, freq, uc_ctrl, s0, s1, pc, st);
-+
-+		/* If Falcon stopped, restart it directly WITHOUT touching PMC 0x000200 */
-+		if (uc_ctrl & 0x10) {
++		if (unlikely(uc_ctrl & 0x10)) {
 +			nvkm_warn(subdev, "DDR3: Falcon stopped (UC=%08x, PC=%08x), restarting directly without PMC reset\n",
 +				  uc_ctrl, pc);
++		}
++
++		/* Wait for exact VBlank onset immediately before triggering Falcon.
++		 * Do NOT call printk/nvkm_info between vblank sync and 0x10a084 trigger! */
++		vpos_start = gf100_ram_wait_vblank(device, &sync_head);
++		t_start = ktime_get();
++
++		if (unlikely(uc_ctrl & 0x10)) {
 +			nvkm_wr32(device, 0x10a080, 0x00000000);
 +			nvkm_wr32(device, 0x10a084, cmd);
 +			nvkm_wr32(device, 0x10a10c, 0x00000000);
@@ -940,36 +1018,57 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +			nvkm_wr32(device, 0x10a080, 0x00000000);  /* clear DONE */
 +			nvkm_wr32(device, 0x10a084, cmd);         /* send cmd: 1=900, 2=324 */
 +		}
-+		(void)nvkm_rd32(device, 0x10a080);
 +		(void)nvkm_rd32(device, 0x10a084);
 +
-+		/* Poll DONE (2s backstop) */
-+		deadline = jiffies + msecs_to_jiffies(2000);
-+		do {
++		/* Fast tight-poll for the first 600us so we catch completion (~160us)
++		 * and strobe the 0x001548 PHY commit latch while STILL inside VBlank! */
++		for (i = 0; i < 300; i++) {
 +			done = nvkm_rd32(device, 0x10a080);
 +			if (done)
 +				break;
-+			usleep_range(500, 1000);
-+		} while (time_before(jiffies, deadline));
++			udelay(2);
++		}
++		if (!done) {
++			deadline = jiffies + msecs_to_jiffies(2000);
++			do {
++				done = nvkm_rd32(device, 0x10a080);
++				if (done)
++					break;
++				usleep_range(100, 200);
++			} while (time_before(jiffies, deadline));
++		}
 +
 +		if (done == 0xE1EC0001) {
-+			/* Assert hardware PHY timing commit latch from host */
++			/* Assert hardware PHY timing commit latch from host inside VBlank */
 +			nvkm_wr32(device, 0x001548, 0x00000101);
 +			nvkm_wr32(device, 0x001548, 0x80000101);
++			(void)nvkm_rd32(device, 0x001548);
 +
-+			deadline = jiffies + msecs_to_jiffies(100);
-+			do {
++			exec_us = ktime_us_delta(ktime_get(), t_start);
++			if (sync_head >= 0)
++				vpos_end = gf100_ram_read_vpos(device, sync_head);
++
++			for (i = 0; i < 20; i++) {
 +				cur = nvkm_clk_read(device->clk, nv_clk_src_mem);
 +				if (cur && abs((int)cur - (int)freq) < (int)(freq / 20))
 +					break;
-+				usleep_range(500, 1000);
-+			} while (time_before(jiffies, deadline));
++				udelay(5);
++			}
++			if (!cur || abs((int)cur - (int)freq) >= (int)(freq / 20)) {
++				deadline = jiffies + msecs_to_jiffies(100);
++				do {
++					cur = nvkm_clk_read(device->clk, nv_clk_src_mem);
++					if (cur && abs((int)cur - (int)freq) < (int)(freq / 20))
++						break;
++					usleep_range(500, 1000);
++				} while (time_before(jiffies, deadline));
++			}
 +
 +			u32 f0 = nvkm_rd32(device, 0x1373f0);
 +			u32 f_mpll = nvkm_clk_read(device->clk, nv_clk_src_mpll);
 +			u32 f_mdiv = nvkm_clk_read(device->clk, nv_clk_src_mdiv);
-+			nvkm_info(subdev, "DDR3: resident fast-path DONE: cmd=%u, 0x1373f0=%08x, mpll=%u kHz, mdiv=%u kHz, mem=%u kHz (target %u)\n",
-+				  cmd, f0, f_mpll, f_mdiv, cur, freq);
++			nvkm_info(subdev, "DDR3: resident fast-path DONE in %lld us (vpos %d -> %d): cmd=%u, 0x1373f0=%08x, mpll=%u kHz, mdiv=%u kHz, mem=%u kHz (target %u)\n",
++				  exec_us, vpos_start, vpos_end, cmd, f0, f_mpll, f_mdiv, cur, freq);
 +			if (cur && abs((int)cur - (int)freq) < (int)(freq / 20))
 +				return 0;
 +			nvkm_error(subdev, "DDR3: resident fast-path completed, but readback %u kHz != target %u kHz!\n",
@@ -1045,43 +1144,66 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +	nvkm_info(subdev, "DDR3: native executor: cmd=%u (target %u kHz), starting (UC=%08x)\n",
 +		  cmd, freq, nvkm_rd32(device, 0x10a100));
 +
++	/* Align cold-path START to VBlank onset as well */
++	vpos_start = gf100_ram_wait_vblank(device, &sync_head);
++	t_start = ktime_get();
++
 +	/* ENTRY=0, START */
 +	nvkm_wr32(device, 0x10a10c, 0x00000000);
 +	nvkm_wr32(device, 0x10a104, 0x00000000);
 +	nvkm_wr32(device, 0x10a100, 0x00000002);
++	(void)nvkm_rd32(device, 0x10a100);
 +
-+	/* Brief delay to allow Falcon to begin execution */
-+	usleep_range(1000, 2000);
-+
-+	/* Poll DONE (2s backstop). */
-+	deadline = jiffies + msecs_to_jiffies(2000);
-+	do {
++	/* Fast tight-poll for the first 600us so cold-path also latches inside VBlank */
++	for (i = 0; i < 300; i++) {
 +		done = nvkm_rd32(device, 0x10a080);
 +		if (done)
 +			break;
-+		usleep_range(1000, 5000);
-+	} while (time_before(jiffies, deadline));
++		udelay(2);
++	}
++	if (!done) {
++		deadline = jiffies + msecs_to_jiffies(2000);
++		do {
++			done = nvkm_rd32(device, 0x10a080);
++			if (done)
++				break;
++			usleep_range(100, 200);
++		} while (time_before(jiffies, deadline));
++	}
 +
 +	if (done == 0xE1EC0001) {
 +		fexec_resident_running = true;
 +
-+		/* Assert hardware PHY timing commit latch from host */
++		/* Assert hardware PHY timing commit latch from host inside VBlank */
 +		nvkm_wr32(device, 0x001548, 0x00000101);
 +		nvkm_wr32(device, 0x001548, 0x80000101);
++		(void)nvkm_rd32(device, 0x001548);
 +
-+		deadline = jiffies + msecs_to_jiffies(100);
-+		do {
++		exec_us = ktime_us_delta(ktime_get(), t_start);
++		if (sync_head >= 0)
++			vpos_end = gf100_ram_read_vpos(device, sync_head);
++
++		for (i = 0; i < 20; i++) {
 +			cur = nvkm_clk_read(device->clk, nv_clk_src_mem);
 +			if (cur && abs((int)cur - (int)freq) < (int)(freq / 20))
 +				break;
-+			usleep_range(500, 1000);
-+		} while (time_before(jiffies, deadline));
++			udelay(5);
++		}
++		if (!cur || abs((int)cur - (int)freq) >= (int)(freq / 20)) {
++			deadline = jiffies + msecs_to_jiffies(100);
++			do {
++				cur = nvkm_clk_read(device->clk, nv_clk_src_mem);
++				if (cur && abs((int)cur - (int)freq) < (int)(freq / 20))
++					break;
++				usleep_range(500, 1000);
++			} while (time_before(jiffies, deadline));
++		}
 +
 +		u32 f0 = nvkm_rd32(device, 0x1373f0);
 +		u32 f_mpll = nvkm_clk_read(device->clk, nv_clk_src_mpll);
 +		u32 f_mdiv = nvkm_clk_read(device->clk, nv_clk_src_mdiv);
-+		nvkm_info(subdev, "DDR3: native resident executor started DONE: cmd=%u, 0x1373f0=%08x, mpll=%u kHz, mdiv=%u kHz, mem=%u kHz (target %u)\n",
-+			  cmd, f0, f_mpll, f_mdiv, cur, freq);
++		nvkm_info(subdev, "DDR3: native resident executor started DONE in %lld us (vpos %d -> %d): cmd=%u, 0x1373f0=%08x, mpll=%u kHz, mdiv=%u kHz, mem=%u kHz (target %u)\n",
++			  exec_us, vpos_start, vpos_end, cmd, f0, f_mpll, f_mdiv, cur, freq);
 +		if (cur && abs((int)cur - (int)freq) < (int)(freq / 20))
 +			return 0;
 +		nvkm_error(subdev, "DDR3: executor completed, but readback %u kHz does NOT match target %u kHz!\n",
@@ -1122,8 +1244,15 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
 +		return -EINVAL;
 +	}
 +
-+	/* Already there (within 1%): do NOT retime DRAM for nothing. */
++	/* Already there (within 1%): do NOT retime DRAM for nothing.
++	 * However, on initial boot at 324 MHz when the resident Falcon
++	 * executor is not yet uploaded, pre-warm it once so the very first
++	 * 07 -> 0f transition executes on the sub-200us resident fast-path. */
 +	if (cur && abs((int)cur - (int)freq) < (int)(freq / 100)) {
++		if (!fexec_resident_running && cur <= 400000) {
++			nvkm_info(subdev, "DDR3: pre-warming resident Falcon executor at %u kHz\n", cur);
++			return gf100_ram_exec_custom(ram, freq);
++		}
 +		nvkm_debug(subdev, "DDR3: memory already at %u kHz\n", cur);
 +		return 0;
 +	}
@@ -1142,7 +1271,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  int
  gf100_ram_calc(struct nvkm_ram *base, u32 freq)
  {
-@@ -143,6 +498,9 @@ gf100_ram_calc(struct nvkm_ram *base, u3
+@@ -143,6 +627,9 @@ gf100_ram_calc(struct nvkm_ram *base, u3
  	int N1, M1, P;
  	int ret;
  
@@ -1152,7 +1281,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	/* lookup memory config data relevant to the target frequency */
  	rammap.data = nvbios_rammapEm(bios, freq / 1000, &ver, &rammap.size,
  				      &cnt, &ramcfg.size, &cfg);
-@@ -408,6 +766,22 @@ gf100_ram_prog(struct nvkm_ram *base)
+@@ -408,6 +895,22 @@ gf100_ram_prog(struct nvkm_ram *base)
  {
  	struct gf100_ram *ram = gf100_ram(base);
  	struct nvkm_device *device = ram->base.fb->subdev.device;
@@ -1175,7 +1304,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  	ram_exec(&ram->fuc, nvkm_boolopt(device->cfgopt, "NvMemExec", true));
  	return 0;
  }
-@@ -436,7 +810,65 @@ gf100_ram_init(struct nvkm_ram *base)
+@@ -436,7 +939,65 @@ gf100_ram_init(struct nvkm_ram *base)
  	};
  	struct gf100_ram *ram = gf100_ram(base);
  	struct nvkm_device *device = ram->base.fb->subdev.device;
@@ -1242,7 +1371,7 @@ diff -uNrp -x '*.o' -x '.*.cmd' -x '*.ko*' -x Module.symvers -x modules.order -x
  
  	switch (ram->base.type) {
  	case NVKM_RAM_TYPE_GDDR5:
-@@ -650,6 +1082,14 @@ gf100_ram_new_(const struct nvkm_ram_fun
+@@ -650,6 +1211,14 @@ gf100_ram_new_(const struct nvkm_ram_fun
  	ram->fuc.r_0x611200 = ramfuc_reg(0x611200);
  
  	ram->fuc.r_0x13d8f4 = ramfuc_reg(0x13d8f4);

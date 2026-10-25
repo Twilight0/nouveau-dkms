@@ -19,6 +19,11 @@ import time
 PSTATE_PATH = "/sys/kernel/debug/dri/0/pstate"
 CLIENTS_PATH = "/sys/kernel/debug/dri/0/clients"
 CONFIG_PATH = "/etc/nouveau-dynclockd.conf"
+SNAPSHOT_DIR = "/run/nouveau"
+PSTATE_SNAPSHOT = os.path.join(SNAPSHOT_DIR, "pstate")
+CLIENTS_SNAPSHOT = os.path.join(SNAPSHOT_DIR, "clients")
+STATUS_SNAPSHOT = os.path.join(SNAPSHOT_DIR, "status")
+MODE_PATH = os.path.join(SNAPSHOT_DIR, "mode")
 
 PSTATE_DESCRIPTIONS = {
     "03": "P12 Low-Power Standby / Idle",
@@ -35,12 +40,36 @@ def run_cmd(cmd, timeout=3):
         return ""
 
 def read_debugfs_file(path):
+    # Check world-readable runtime snapshot first (zero privilege, instant < 0.1ms read)
+    if "pstate" in path and os.path.exists(PSTATE_SNAPSHOT):
+        try:
+            if os.path.exists(MODE_PATH):
+                mode_mt = os.path.getmtime(MODE_PATH)
+                for _ in range(15):
+                    if os.path.getmtime(PSTATE_SNAPSHOT) >= mode_mt:
+                        break
+                    time.sleep(0.01)
+            with open(PSTATE_SNAPSHOT, "r") as f:
+                c = f.read()
+                if c:
+                    return c
+        except Exception:
+            pass
+    elif "clients" in path and os.path.exists(CLIENTS_SNAPSHOT):
+        try:
+            with open(CLIENTS_SNAPSHOT, "r") as f:
+                c = f.read()
+                if c:
+                    return c
+        except Exception:
+            pass
+
     try:
         with open(path, "r") as f:
             return f.read()
     except Exception:
         pass
-    return run_cmd(f"sudo /bin/cat {path} 2>/dev/null")
+    return run_cmd(f"sudo /bin/cat {path} 2>/dev/null", timeout=1)
 
 def save_throttle_temp(temp):
     conf_path = CONFIG_PATH
@@ -175,7 +204,45 @@ def get_telemetry():
         except Exception:
             pass
 
-    daemon_active = "active" in run_cmd("systemctl is-active nouveau-dynclockd 2>/dev/null")
+    daemon_active = "active" in run_cmd("systemctl is-active nouveau-dynclockd 2>/dev/null", timeout=1)
+    lock_target = None
+    mode_str = "auto"
+    disp_clk_khz = None
+    disp_ref_hz = None
+    idle_floor = "07"
+    irqs_per_sec = None
+
+    if os.path.exists(MODE_PATH):
+        try:
+            with open(MODE_PATH, "r") as f:
+                val = f.read().strip()
+                if val.startswith("locked:"):
+                    lock_target = val.split(":", 1)[1].strip()
+                    mode_str = f"locked:{lock_target}"
+                elif val == "auto":
+                    mode_str = "auto"
+        except Exception:
+            pass
+
+    if os.path.exists(STATUS_SNAPSHOT):
+        try:
+            with open(STATUS_SNAPSHOT, "r") as f:
+                for line in f:
+                    if "=" in line:
+                        k, v = line.strip().split("=", 1)
+                        if k == "display_clock_khz" and v.isdigit():
+                            disp_clk_khz = int(v)
+                        elif k == "display_refresh_hz" and v.isdigit():
+                            disp_ref_hz = int(v)
+                        elif k == "idle_floor":
+                            idle_floor = v
+                        elif k == "interrupts_per_sec":
+                            try:
+                                irqs_per_sec = float(v)
+                            except ValueError:
+                                pass
+        except Exception:
+            pass
 
     power = get_power_source()
     vram = get_vram_data()
@@ -197,6 +264,12 @@ def get_telemetry():
         "daemon": daemon_active,
         "power": power_str,
         "vram": vram_str,
+        "mode": mode_str,
+        "lock_target": lock_target,
+        "disp_clk_khz": disp_clk_khz,
+        "disp_ref_hz": disp_ref_hz,
+        "idle_floor": idle_floor,
+        "irqs_per_sec": irqs_per_sec,
     }
 
 def get_clients():
@@ -413,8 +486,9 @@ class NouveauTUI:
     def draw_keybind_ribbon(self, start_y, cols):
         if self.active_mode == 0:
             row1 = [
-                ("Space/Enter", "Lock State / Toggle Governor"),
-                ("a", "Auto Reclock"),
+                ("Space/Enter", "Lock / Toggle"),
+                ("a", "Auto Mode"),
+                ("R", "Reload Daemon"),
                 ("t / - / +", "Throttle Temp"),
                 ("r", "Refresh"),
             ]
@@ -527,14 +601,23 @@ class NouveauTUI:
             self.safe_addstr(y, 2, f" {arrow} ", self.cyan | curses.A_BOLD if is_gov_focus else curses.A_NORMAL)
 
             gov_title = "Dynamic Frequency Governor (nouveau-dynclockd)"
-            gov_badge = "[●] AUTO (RUNNING)" if daemon_active else "[○] MANUAL (INACTIVE)"
-            gov_badge_col = self.badge | curses.A_BOLD if daemon_active else self.yellow
+            lock_target = self.telemetry.get("lock_target")
+            if daemon_active:
+                if lock_target:
+                    gov_badge = f"[●] LOCKED: {lock_target} (ACTIVE)"
+                    gov_badge_col = self.cyan | curses.A_BOLD
+                else:
+                    gov_badge = "[●] AUTO (DYNAMIC GOVERNOR)"
+                    gov_badge_col = self.badge | curses.A_BOLD
+            else:
+                gov_badge = "[○] INACTIVE (DAEMON STOPPED)"
+                gov_badge_col = self.yellow
 
             self.safe_addstr(y, 6, gov_title[:cols - 35], self.green | curses.A_BOLD if daemon_active else (curses.A_BOLD if is_gov_focus else curses.A_NORMAL))
             badge_x = max(20, cols - len(gov_badge) - 3)
             self.safe_addstr(y, badge_x, gov_badge, gov_badge_col)
 
-            gov_hint = "Manages 03 ↔ 0f load-aware clocking  •  [Space/Enter] Toggle  •  [a] Enable Auto"
+            gov_hint = "Manages 03 ↔ 0f load-aware clocking  •  [Space/Enter] Toggle  •  [a] Enable Auto  •  [R] Reload"
             self.safe_addstr(y + 1, 6, gov_hint[:cols - 8], self.cyan if is_gov_focus else curses.A_DIM)
 
             # Live Temperature & Thermal throttle line
@@ -555,10 +638,20 @@ class NouveauTUI:
             self.safe_addstr(y + 2, 16, f"{temp_s} ", t_col)
             th_str = f" •  Thermal Limit: [ {th_temp} °C ] (Cap: 07)  •  [t] Set  •  [- / +] Adjust"
             self.safe_addstr(y + 2, 16 + len(temp_s) + 1, th_str[:cols - (17 + len(temp_s))], self.yellow if is_gov_focus else curses.A_DIM)
-            y += 4
+
+            # Live Display & Floor line
+            disp_clk = self.telemetry.get("disp_clk_khz")
+            disp_ref = self.telemetry.get("disp_ref_hz")
+            idle_floor = self.telemetry.get("idle_floor", "07")
+            if disp_clk and disp_ref:
+                d_str = f"Display: {disp_clk/1000:.1f} MHz ({disp_ref} Hz)  •  Idle Floor: [{idle_floor}] (Anti-Flicker Guard)"
+            else:
+                d_str = f"Idle Floor: [{idle_floor}] (Anti-Flicker Guard)"
+            self.safe_addstr(y + 3, 6, d_str[:cols - 8], self.cyan | curses.A_BOLD if is_gov_focus else curses.A_DIM)
+            y += 5
 
             # Divider between Governor and P-States
-            self.safe_addstr(y, 4, "Manual Performance State Locks (Selecting disables governor):", curses.A_DIM)
+            self.safe_addstr(y, 4, "Performance States (Selecting coordinates lock while preserving thermal safety):", curses.A_DIM)
             y += 2
 
             # P-State Entries
@@ -568,13 +661,21 @@ class NouveauTUI:
 
                 item_idx = i + 1
                 is_focused = (item_idx == self.focus_idx)
-                is_active = p["active"] and not daemon_active
+                if lock_target:
+                    is_active = (p["code"] == lock_target)
+                    radio = "[●] LOCKED" if is_active else "[○] Available"
+                    radio_col = self.cyan | curses.A_BOLD if is_active else self.yellow
+                elif daemon_active:
+                    is_active = p["active"]
+                    radio = "[●] ACTIVE" if is_active else "[○] Auto"
+                    radio_col = self.badge | curses.A_BOLD if is_active else self.yellow
+                else:
+                    is_active = p["active"]
+                    radio = "[●] LOCKED" if is_active else "[○] Available"
+                    radio_col = self.badge | curses.A_BOLD if is_active else self.yellow
+
                 arrow = Style.arrow_focused if is_focused else Style.arrow
-
                 self.safe_addstr(y, 2, f" {arrow} ", self.cyan | curses.A_BOLD if is_focused else curses.A_NORMAL)
-
-                radio = "[●] LOCKED" if is_active else "[○] Available"
-                radio_col = self.badge | curses.A_BOLD if is_active else self.yellow
 
                 title_str = f"P-State [{p['code']}]: {p['desc']}"
                 self.safe_addstr(y, 6, title_str[:cols - 35], self.green | curses.A_BOLD if is_active else (curses.A_BOLD if is_focused else curses.A_NORMAL))
@@ -756,10 +857,24 @@ class NouveauTUI:
                 self.execute_selection()
 
             elif ch == ord('a'):
-                run_cmd("sudo /usr/bin/systemctl restart nouveau-dynclockd.service")
+                os.makedirs(SNAPSHOT_DIR, exist_ok=True)
+                try:
+                    with open(MODE_PATH, "w") as f:
+                        f.write("auto\n")
+                except PermissionError:
+                    run_cmd(f"echo 'auto' | sudo tee {MODE_PATH} >/dev/null")
+                daemon_active = "active" in run_cmd("systemctl is-active nouveau-dynclockd 2>/dev/null", timeout=1)
+                if not daemon_active:
+                    run_cmd("sudo systemctl restart nouveau-dynclockd.service")
                 self.status_msg = "GPU set to dynamic governor (Auto reclocking)."
                 self.status_color = 1
                 self.refresh_data()
+
+            elif ch in (ord('R'), 18):  # 'R' or Ctrl+R
+                run_cmd("sudo systemctl kill -s HUP nouveau-dynclockd.service 2>/dev/null")
+                self.refresh_data()
+                self.status_msg = "Reloaded nouveau-dynclockd configuration (SIGHUP)."
+                self.status_color = 1
 
             elif ch in (ord('-'), ord('[')):
                 cur_th = self.telemetry.get("throttle_temp", 80)
@@ -789,20 +904,51 @@ class NouveauTUI:
 
     def execute_selection(self):
         if self.active_mode == 0:
+            os.makedirs(SNAPSHOT_DIR, exist_ok=True)
             if self.focus_idx == 0:
-                if self.telemetry.get("daemon"):
-                    run_cmd("sudo /usr/bin/systemctl stop nouveau-dynclockd.service")
-                    self.status_msg = "Stopped nouveau-dynclockd governor."
+                lock_target = self.telemetry.get("lock_target")
+                if lock_target:
+                    # Switch to Auto
+                    try:
+                        with open(MODE_PATH, "w") as f:
+                            f.write("auto\n")
+                    except PermissionError:
+                        run_cmd(f"echo 'auto' | sudo tee {MODE_PATH} >/dev/null")
+                    self.status_msg = "Switched governor to AUTO mode."
                 else:
-                    run_cmd("sudo /usr/bin/systemctl restart nouveau-dynclockd.service")
-                    self.status_msg = "Started nouveau-dynclockd governor (Auto reclocking)."
+                    # Toggle to Lock 07
+                    try:
+                        with open(MODE_PATH, "w") as f:
+                            f.write("locked:07\n")
+                    except PermissionError:
+                        run_cmd(f"echo 'locked:07' | sudo tee {MODE_PATH} >/dev/null")
+                    self.status_msg = "Locked GPU to P-State [07] (Thermal protection active)."
+
+                daemon_active = "active" in run_cmd("systemctl is-active nouveau-dynclockd 2>/dev/null", timeout=1)
+                if not daemon_active:
+                    run_cmd("sudo systemctl restart nouveau-dynclockd.service")
             else:
                 p_idx = self.focus_idx - 1
                 if 0 <= p_idx < len(self.pstates):
                     target = self.pstates[p_idx]["code"]
-                    run_cmd("sudo /usr/bin/systemctl stop nouveau-dynclockd.service")
-                    run_cmd(f"echo '{target}' | sudo tee /sys/kernel/debug/dri/0/pstate >/dev/null")
-                    self.status_msg = f"Locked GPU to P-State [{target}] ({self.pstates[p_idx]['core']} MHz)."
+                    try:
+                        with open(MODE_PATH, "w") as f:
+                            f.write(f"locked:{target}\n")
+                    except PermissionError:
+                        run_cmd(f"echo 'locked:{target}' | sudo tee {MODE_PATH} >/dev/null")
+
+                    daemon_active = "active" in run_cmd("systemctl is-active nouveau-dynclockd 2>/dev/null", timeout=1)
+                    if not daemon_active:
+                        run_cmd("sudo systemctl restart nouveau-dynclockd.service")
+
+                    # Also directly write target to debugfs if accessible
+                    try:
+                        with open(PSTATE_PATH, "w") as f:
+                            f.write(f"{target}\n")
+                    except Exception:
+                        pass
+
+                    self.status_msg = f"Locked GPU to P-State [{target}] ({self.pstates[p_idx]['core']} MHz) with thermal protection."
             self.status_color = 1
             self.refresh_data()
 
