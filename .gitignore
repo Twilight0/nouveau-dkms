@@ -18,4 +18,4 @@ tmp/
 binary_driver/
 nouveau_fermi_diag_report.md
 fermi_memory_reclock_report.md
-NEWSFLASH.md
+docs/NEWSFLASH.md
