@@ -47,36 +47,40 @@ graph TD
 
 ---
 
-## 2. Category 1: Inside the Kernel Driver (`nouveau.ko` / `nouveau-reclocking-dkms`)
+## 2. Category 1: Inside the Kernel Driver (`nouveau.ko` / `nouveau-dkms`)
 
 These items require direct MMIO register access, hardware interrupt servicing, physical DRAM controller management, or kernel DRM subsystem hooks.
 
 ### 1. Reclocking & Clock State Management
-- [x] **Bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**: Resident Falcon microcode executor (`memx_exec_custom.fuc`) via `SCRATCH2`/`SCRATCH3` mailboxes.
+- [x] **Bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**: Resident Falcon microcode executor (`memx_exec_custom.fuc` / `fexec_code.inc`) via `SCRATCH2`/`SCRATCH3` mailboxes.
+- [x] **Zero-Stutter Signed-`vpos` VBlank-Onset Memory Reclocking (`v2.2.0`)**:
+  - True NV50/GF100 signed-`vpos` calculation in `ramgf100.c` (`gf100_ram_calc_vpos` / `gf100_ram_wait_vblank`), stepping in 80–150 µs sleeps into the approach zone, tight-polling `udelay(1)` for VBlank onset (`vpos 1077 -> -46`), and completing host PHY latch (`0x001548`) in 477–535 µs inside VBlank without visual stutter.
+- [x] **Boot-Time Resident Falcon Pre-Warm (`gf100_ram_calc_ddr3`)**: Pre-warms the resident executor at initial 324 MHz boot initialization so runtime transitions run on the sub-millisecond fast-path without cold resets.
 - [x] **S3 Suspend / Resume Self-Healing**: Hardware signature check (`SCRATCH0 == 0xE1EC0001`) and cold fallback path.
 - [x] **Dynamic PCIe Gen1 (`2.5 GT/s`) ↔ Gen2 (`5.0 GT/s`) Link Retraining**: Automatic retraining via `0x02241c`, `0x088460`, and `0x088088`.
-- [x] **P-State 10 Overclock (`700/1400/900 MHz @ 1.030 V`)**: Gated behind `config=NvFermiOC=true`.
-- [ ] **True Zero-Flash VBlank Memory Reclocking**:
-  - In-Falcon `WAIT_VBLANK` polling (opcode `0x14` / `_nv031916rm`).
-  - Pre-`STOP_FB` display `ISOHUB` watermark spool-up (`0x610050+` / `_nv031860rm`).
-  - Per-partition write-buffer flush (`0x13d7f4` / opcode `0x3a` / `_nv031754rm`).
+- [x] **P-State 10 Overclock (`708/1416/900 MHz @ 1.030 V`)**: Gated behind `config=NvFermiOC=true`.
 - [ ] **Synthetic P3 State `0a` (`405/810/650 MHz @ 0.920 V`)**:
   - `0x132004 = 0x10012702` MEMPLL formula + VBIOS strap selection + VID `0x03` voltage mapping.
+- [ ] **Hardware Parity Optimization: Lossless Z-Cull & Tile Depth Compression (`TAGRAM` / `PLTCG` `0x140000` / `PGRAPH`) [~15% Bandwidth Win]**:
+  - Audit and decompile `_nv010721rm` / `_nv031754rm` and Mesa `nv50_surface.c` to enable Z-Cull and ROP color tile compression tags, cutting 3D rasterization bus pressure by 30–50% to close the ~15% bandwidth parity gap.
+- [ ] **Fine-Grained BLCG / SLCG Hardware Clock Gating (`0x00020xxx`)**:
+  - Extract `.rodata` tables from `nv-kernel.o_binary` and program them during `gr`/`fb`/`therm` init, cutting idle leakage by `2–4 W` and providing dynamic power/thermal headroom.
 - [ ] **Pre-`Nova` Architecture Expansion**:
   - Tesla (`GT215`), Fermi (`GF100–GF119`), Kepler (`GK104–GK208`), and First-Gen Maxwell (`GM107`/`GM108` unsigned Falcon).
 
 ### 2. Display Engine & Modesetting (`dispnv50`)
+- [x] **120 Hz Display Floor Guard (`v2.2.0`)**:
+  - Clamps `idle_floor` to `07` (`405 MHz` `dispclk`) when `pixel_clock > 135 MHz` (120 Hz) via `libdrm.so.2` CRTC interrogation, matching `390.157` IMP checks (`_nv002187kms`) to eliminate FIFO underflows.
 - [ ] **120 Hz eDP DP Link Validation & Auto BPC Step-Down**:
   - Connector atomic check stepping down `8 bpc` (`24 bpp` = 9.51 Gbps) → **`6 bpc` (`18 bpp` = 7.13 Gbps)** with hardware dithering to fit 4-lane HBR1 (8.64 Gbps max).
 - [ ] **EDID `+5.0 MHz` Grace Margin & Stereo Quirk**:
   - Bypass conflicting EDID range caps on 3D Vision panels (`LGD 0x02c5`).
-- [ ] **Active 120 Hz P-State Floor**:
-  - Kernel-side clamp locking `dispclk >= 405 MHz` when `pixel_clock > 135 MHz`.
-- [ ] **Atomic KMS Async Page-Flip (`DRM_MODE_PAGE_FLIP_ASYNC`)**:
-  - Allow low-latency presentation in games above 120 FPS.
+- [ ] **Atomic KMS Async Page-Flip (`DRM_MODE_PAGE_FLIP_ASYNC`) & Explicit Sync**:
+  - Allow low-latency presentation in games above 120 FPS and validate `linux-drm-syncobj-v1` timeline fences.
 
 ### 3. Hardware Telemetry & Thermal Protection
-- [x] **In-Kernel TTM VRAM Accounting**: Exact `VRAM: <used> MiB / <total> MiB used` in debugfs `pstate`.
+- [x] **In-Kernel TTM VRAM Accounting (`v2.1.0`)**: Exact `VRAM: <used> MiB / <total> MiB used` in debugfs `pstate`.
+- [x] **Hardware Interrupt Activity Tracking (`v2.2.0`)**: Sub-millisecond GPU load tracking via `/proc/interrupts` (`nvkm`).
 - [ ] **PDAEMON Hardware Engine Utilization Counters**:
   - Configure signal filters in `0x10a600..0x10a610` to measure true hardware `GR %`, `FB %`, and `VDEC %` load.
 - [ ] **Standard DRM `fdinfo` (`drm_show_fdinfo`)**:
@@ -84,7 +88,7 @@ These items require direct MMIO register access, hardware interrupt servicing, p
 - [ ] **Unprivileged sysfs Telemetry**:
   - Expose `gpu_busy_percent` and `mem_info_vram_*` under `/sys/class/drm/card*/device/`.
 - [ ] **Hardware `PTHERM` Auto-Slowdown**:
-  - Configure hardware thermal clock dividers at `90–92 °C` as an unkillable safety floor.
+  - Configure hardware thermal clock dividers at `90–92 °C` as an unkillable safety floor with progressive multi-step governor throttling (`10` → `0f` → `0a` → `07`).
 
 ### 4. Memory Subsystem Extensions
 - [ ] **Mode A (Kernel Layer)**:
@@ -119,26 +123,43 @@ These components live above the kernel interface. They compile against user-spac
   - **Location**: `src/nouveau/vulkan/` in Mesa.
   - **Action**: Implement `hasvk`-style bound-descriptor lowering (mapping Vulkan descriptor sets into Fermi's 128 `TIC` / 32 `TSC` binding tables) over Mesa's `NIR → nv50_ir` compiler backend.
 
-### 3. Application Runtimes & Inference Engines
+### 3. Mesa Gallium & Compiler Backends (`nv50_ir` / `nouveau`)
+- [ ] **Mesa `nv50_ir`: Dual-Issue Warp Scheduling & Superscalar Dispatch [~10% Compute Win]**:
+  - **Location**: `src/nouveau/codegen/nv50_ir_*.cpp` in Mesa.
+  - **Action**: Enhance instruction scheduler to bundle independent ALU + TEX/MEM or INT + FP instructions into dual-issue pairs for Fermi SM20 dual warp schedulers, closing the shader ALU deficit against NVIDIA's proprietary compiler.
+- [ ] **Mesa `nv50_ir`: Register Spilling Mitigation & Constant Rematerialization**:
+  - **Location**: `src/nouveau/codegen/nv50_ir_ra.cpp` in Mesa.
+  - **Action**: Implement graph-coloring rematerialization of uniform expressions, constants, and address math during register allocation to prevent spills into slow local VRAM.
+- [ ] **Mesa Gallium Z-Cull & Tile Compression Integration**:
+  - **Location**: `src/gallium/drivers/nouveau/nv50/nv50_surface.c` and `nvc0/`.
+  - **Action**: Bind kernel `TAGRAM` buffer allocations to depth/stencil surfaces to activate hardware Z-Cull and lossless color tile compression.
+
+### 4. Application Runtimes & Inference Engines
 - [ ] **`llama.cpp` / `CLBlast` OpenCL Acceleration**:
   - Build and tune `llama.cpp` with `-DGGML_OPENCL=ON` for Small Language Models (SLMs) on Fermi.
 
 ---
 
-## 4. Category 3: Companion User-Space Utilities Suite (`nouveau-tools`)
+## 4. Category 3: Companion User-Space Utilities Suite (`nouveau-tools` / `nouveau-dkms`)
 
-These tools reside in user space. They can be distributed alongside the DKMS package initially, but architecturally form a standalone management suite:
+These tools reside in user space. They are packaged directly alongside the DKMS package, forming a complete out-of-the-box management suite:
 
 ### 1. Daemon & Power Management
-- [x] **`nouveau-dynclockd.py` (Dynamic Governor)**:
-  - Two-stage scaling (`03` ↔ `07` for 2D, `0f`/`10` for 3D), thermal protection (`80 °C`), and battery profile cap (`BATTERY_CAP=true`).
-- [ ] **`nouveau-dynclockd` 2.0 Modernization**:
-  - Hardware counter sampling (`0x10a600`), 120 Hz idle floor (`>= 07`), 5-tier scaling ladder (`03` ↔ `07` ↔ `0a` ↔ `0f` ↔ `10`), and hold-down timers.
-  - Coordination with manual mode overrides via `/run/nouveau/mode`.
+- [x] **`nouveau-dynclockd.py` 2.0 (Dynamic Governor & Telemetry Provider)**:
+  - Multi-tier scaling (`03` ↔ `07` for 2D, `0f`/`10` for 3D) with PowerMizer hold-down timers (`HOLD_0F_SECONDS=8`, `HOLD_07_SECONDS=5`).
+  - 120 Hz display floor guard (`>= 07`) via `libdrm.so.2` CRTC interrogation.
+  - Bidirectional mode lock coordination via `/run/nouveau/mode` (`locked:<pstate>` vs `auto`) with 20 ms interruptible polling, enabling non-root `nouveau-ctrl` and `nouveau-tui` to control states with **zero sudo password prompts** while preserving thermal runaway protection.
+  - Per-application profile engine (`/etc/nouveau-dynclockd.d/*.conf`) with `apps.conf.sample` installed.
+  - Sub-millisecond hardware interrupt delta tracking via `/proc/interrupts` (`nvkm`).
+  - World-readable `/run/nouveau/` telemetry snapshots (`pstate`, `clients`, `vram`, `mode`).
+- [ ] **Hardware Engine Counter Sampling**:
+  - Transition from interrupt tracking to direct `< 0.05 ms` polling of `0x10a600..0x10a610` hardware `GR %`, `FB %`, and `VDEC %` busy counters.
+- [ ] **5-Tier Ladder Completion with State `0a`**:
+  - Scale through synthetic P3 state `0a` (`650 MHz` DDR3) once kernel-side PLL calculation lands.
 
 ### 2. Management & Diagnostics
-- [x] **`nouveau-ctrl`**: Scriptable CLI for P-state locking, telemetry queries, and governor control.
-- [x] **`nouveau-tui`**: Interactive curses terminal interface with thermal indicators and real-time monitoring.
+- [x] **`nouveau-ctrl`**: Instant unprivileged status queries and state locking via `/run/nouveau/mode`.
+- [x] **`nouveau-tui`**: Interactive curses terminal interface with instant unprivileged refresh and live `SIGHUP` reload hotkey (`R` / `Ctrl+R`).
 - [x] **`tools/nouveau-fermi-diag.py`**: Standalone hardware diagnostic and VBIOS register dumper.
 - [ ] **Real-Time ASCII Sparkline History**: 60-second activity sparklines in `nouveau-tui` and `nouveau-ctrl watch`.
 
@@ -178,16 +199,22 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 
 ## 6. Master Implementation Checklist
 
-### Repository 1: `nouveau-reclocking-dkms` (Kernel Module)
+### Repository 1: `nouveau-dkms` (Kernel Module)
 - [x] Core / Shader / Voltage reclocking + factory 1.030 V fix
 - [x] Bidirectional DDR3 memory reclocking (`324 MHz` ↔ `900 MHz`) via resident Falcon executor
+- [x] Signed-`vpos` VBlank-onset synchronization in `ramgf100.c` (Zero visual stutter, 477–535 µs in VBlank)
+- [x] Boot-time resident Falcon pre-warm (`gf100_ram_calc_ddr3`) at 324 MHz
 - [x] S3 suspend/resume self-healing recovery (`0xE1EC0001`)
 - [x] Dynamic PCIe Gen1 ↔ Gen2 link speed retraining
-- [x] Verified State 10 Overclock (`700/1400/900 MHz`, `403.2 GFLOPS`)
+- [x] Verified State 10 Overclock (`708/1416/900 MHz`, `407.7 GFLOPS`)
 - [x] Linux 6.18.55 DRM client API rebase
 - [x] In-kernel TTM VRAM usage accounting
-- [ ] In-Falcon `WAIT_VBLANK` + `ISOHUB` watermark spooling (True Zero-Flash VBlank)
+- [x] Sub-millisecond GPU load tracking via hardware interrupts (`/proc/interrupts` `nvkm`)
+- [x] 120 Hz display floor guard (`>= 07`) via `libdrm.so.2` CRTC interrogation
+- [x] Package rename & upgrade transition to `nouveau-dkms` (GitHub, AUR, AliveOS repository)
 - [ ] Synthetic P3 state `0a` (`405/810/650 MHz @ 0.920 V`, `0x132004 = 0x10012702`)
+- [ ] Hardware parity optimization: Lossless Z-Cull & tile depth compression (`TAGRAM` / `PLTCG` `0x140000` / `PGRAPH`)
+- [ ] Fine-grained BLCG / SLCG hardware clock gating (`0x00020xxx`)
 - [ ] 120 Hz eDP `8 bpc → 6 bpc` step-down & `+5.0 MHz` EDID grace margin
 - [ ] PDAEMON hardware load counters (`0x10a600..0x10a610`)
 - [ ] DRM `drm_show_fdinfo` support (`nvtop`/`btop`)
@@ -197,17 +224,22 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 - [ ] Mode A (Unified `VRAM + GART` oversubscription)
 - [ ] Mode B (`/dev/nvram0` `PCOPY` DMA block device)
 
-### Repository 2: `nouveau-tools` (User-Space Management Suite)
-- [x] `nouveau-ctrl` CLI status, clock locking, and watcher
-- [x] `nouveau-tui` curses interface with thermal coloring and fan RPM
-- [x] `nouveau-dynclockd` basic governor (2D/3D load scaling, thermal throttle, battery cap)
-- [ ] `nouveau-dynclockd` 2.0 (hardware counters, 120 Hz idle floor, 5-tier ladder, hold timers)
-- [ ] Governor mode lock coordination via `/run/nouveau/mode`
+### Repository 2: `nouveau-tools` / Companion Suite (Packaged in `nouveau-dkms`)
+- [x] `nouveau-ctrl` CLI status, unprivileged snapshot query, and clock locking via `/run/nouveau/mode`
+- [x] `nouveau-tui` curses interface with thermal coloring, fan RPM, and live `SIGHUP` reload hotkey (`R`)
+- [x] `nouveau-dynclockd.py` 2.0 (Hysteresis hold timers, 120 Hz floor, zero-sudo mode coordination)
+- [x] Per-application profile drop-ins (`/etc/nouveau-dynclockd.d/*.conf`, `apps.conf.sample` installed)
+- [x] Unprivileged `/run/nouveau/` telemetry snapshots (`pstate`, `clients`, `vram`, `mode`)
+- [ ] Hardware engine counter sampling (`0x10a600..0x10a610`)
+- [ ] Real-time ASCII sparkline activity history
 - [ ] `nv3dvision-ir` USB emitter synchronization daemon (`0955:0007`)
 - [ ] `nouveau-extract-fw` PureVideo HD / MSENC firmware extraction script
 - [ ] Cross-distribution release packaging (`.deb`, `.rpm`, Gentoo, NixOS, Makefile)
 
 ### External Project: Mesa Enhancements (Downstream `aliveos-repo` Package / RFC MR)
+- [ ] Mesa `nv50_ir`: Dual-issue warp scheduling & superscalar execution [~10% compute win]
+- [ ] Mesa `nv50_ir`: Register spilling mitigation & constant rematerialization
+- [ ] Mesa Gallium: Z-Cull & lossless tile compression integration (`TAGRAM`) [~15% bandwidth win]
 - [ ] Mesa `Rusticl`: Raise `CL_DEVICE_MAX_MEM_ALLOC_SIZE` to 90% VRAM (`~2.75 GiB`) on `nvc0`
 - [ ] Mesa Gallium VA-API: 4-stage Hybrid Compute-Shader H.264 Encoder for OBS Studio / FFmpeg
 - [ ] Mesa Gallium VA-API: Kepler/Maxwell fixed-function `MSENC` (`0x1c8000`)
