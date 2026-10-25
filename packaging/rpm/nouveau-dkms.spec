@@ -15,6 +15,8 @@ Source7:        nouveau-ctrl
 Source8:        nouveau-tui
 Source9:        apps.conf.sample
 
+%{!?_unitdir: %define _unitdir %{_prefix}/lib/systemd/system}
+
 BuildArch:      noarch
 Requires:       dkms >= 2.1.0.0
 Requires:       kernel-devel
