@@ -1,0 +1,22 @@
+#!/bin/sh
+set -e
+
+PACKAGE_NAME="nouveau-dkms"
+PACKAGE_VERSION="2.2.0"
+
+case "$1" in
+    configure)
+        if command -v dkms >/dev/null 2>&1; then
+            echo "Registering $PACKAGE_NAME $PACKAGE_VERSION with DKMS..."
+            dkms add -m "$PACKAGE_NAME" -v "$PACKAGE_VERSION" || true
+            dkms build -m "$PACKAGE_NAME" -v "$PACKAGE_VERSION" || true
+            dkms install -m "$PACKAGE_NAME" -v "$PACKAGE_VERSION" || true
+        fi
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl daemon-reload || true
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

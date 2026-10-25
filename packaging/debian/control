@@ -1,0 +1,21 @@
+Source: nouveau-dkms
+Section: kernel
+Priority: optional
+Maintainer: Twilight0 <twilight0@vivaldi.net>
+Build-Depends: debhelper-compat (= 13), dkms (>= 2.1.0.0)
+Standards-Version: 4.6.2
+Homepage: https://github.com/Twilight0/nouveau-dkms
+Rules-Requires-Root: no
+
+Package: nouveau-dkms
+Architecture: all
+Depends: ${misc:Depends}, dkms (>= 2.1.0.0), python3, libdrm2 | libdrm-common
+Recommends: linux-headers-generic | linux-headers-amd64 | linux-headers
+Conflicts: nouveau-fermi-reclock-dkms
+Replaces: nouveau-fermi-reclock-dkms
+Description: Nouveau out-of-tree DRM module with dynamic Fermi reclocking (DKMS)
+ Unified out-of-tree Nouveau DRM driver featuring dynamic core, shader, and
+ bidirectional DDR3/GDDR5 memory reclocking for NVIDIA Fermi architecture
+ (GF100, GF104, GF106, GF108, GF119). Includes zero-stutter VBlank onset
+ sync, 120Hz display floor protection, unprivileged telemetry snapshots,
+ and the nouveau-dynclockd background governor.

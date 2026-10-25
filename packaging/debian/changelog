@@ -1,0 +1,7 @@
+nouveau-dkms (2.2.0-1) unstable; urgency=medium
+
+  * Release v2.2.0: Zero-stutter VBlank-onset memory reclocking.
+  * Governor modernization & zero-sudo telemetry (nouveau-dynclockd 2.0).
+  * 120Hz display floor guard & per-application profiles.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Sun, 25 Oct 2026 10:38:05 +0200

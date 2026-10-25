@@ -1,0 +1,21 @@
+#!/bin/sh
+set -e
+
+PACKAGE_NAME="nouveau-dkms"
+PACKAGE_VERSION="2.2.0"
+
+case "$1" in
+    remove|upgrade|deconfigure)
+        if command -v systemctl >/dev/null 2>&1; then
+            systemctl stop nouveau-dynclockd.service >/dev/null 2>&1 || true
+            systemctl disable nouveau-dynclockd.service >/dev/null 2>&1 || true
+        fi
+        if command -v dkms >/dev/null 2>&1; then
+            echo "Removing $PACKAGE_NAME $PACKAGE_VERSION from DKMS..."
+            dkms remove -m "$PACKAGE_NAME" -v "$PACKAGE_VERSION" --all || true
+        fi
+        ;;
+esac
+
+#DEBHELPER#
+exit 0

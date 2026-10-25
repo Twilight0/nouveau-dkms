@@ -1,0 +1,125 @@
+name: Build & Release Packages
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-arch:
+    name: Build Arch Linux Package (.pkg.tar.zst)
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare unprivileged builder
+        run: |
+          pacman -Syu --noconfirm git python
+          useradd -m -s /bin/bash builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build package with makepkg
+        run: |
+          su builder -c "makepkg -s --noconfirm"
+
+      - name: Upload Arch package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: arch-package
+          path: "*.pkg.tar.zst"
+
+  build-debian:
+    name: Build Debian / Ubuntu Package (.deb)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y debhelper dkms dpkg-dev
+
+      - name: Setup Debian packaging structure
+        run: |
+          cp -r packaging/debian .
+
+      - name: Build Debian binary package
+        run: |
+          dpkg-buildpackage -us -uc -b
+          mkdir -p dist/deb
+          cp ../*.deb dist/deb/
+
+      - name: Upload Debian package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: debian-package
+          path: dist/deb/*.deb
+
+  build-rpm:
+    name: Build Fedora / RHEL Package (.rpm)
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install RPM build dependencies
+        run: |
+          dnf install -y rpm-build rpmdevtools patch tar
+
+      - name: Prepare RPM build environment
+        run: |
+          rpmdev-setuptree
+          cp packaging/rpm/nouveau-dkms.spec ~/rpmbuild/SPECS/
+          cp nouveau-source.tar.gz nouveau.patch dkms.conf nouveau.conf \
+             nouveau-dynclockd.conf nouveau-dynclockd.py nouveau-dynclockd.service \
+             nouveau-ctrl nouveau-tui apps.conf.sample ~/rpmbuild/SOURCES/
+
+      - name: Build RPM package
+        run: |
+          rpmbuild -ba ~/rpmbuild/SPECS/nouveau-dkms.spec
+          mkdir -p dist/rpm
+          cp ~/rpmbuild/RPMS/noarch/*.rpm dist/rpm/
+
+      - name: Upload RPM package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: rpm-package
+          path: dist/rpm/*.rpm
+
+  release:
+    name: Publish Release Assets to GitHub
+    needs: [build-arch, build-debian, build-rpm]
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+          merge-multiple: true
+
+      - name: Generate Checksums
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Attach artifacts to GitHub Release
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload "${{ github.ref_name }}" release-assets/* --clobber

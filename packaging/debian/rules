@@ -1,0 +1,27 @@
+#!/usr/bin/make -f
+%:
+	dh $@
+
+override_dh_auto_build:
+	mkdir -p build/nouveau-dkms-2.2.0
+	tar -xzf nouveau-source.tar.gz -C build/
+	patch -Np1 -d build/nouveau-source < nouveau.patch
+	cp -r build/nouveau-source/* build/nouveau-dkms-2.2.0/
+	sed 's/@PKGVER@/2.2.0/g' dkms.conf > build/nouveau-dkms-2.2.0/dkms.conf
+
+override_dh_auto_install:
+	install -d debian/nouveau-dkms/usr/src/nouveau-dkms-2.2.0
+	cp -r build/nouveau-dkms-2.2.0/* debian/nouveau-dkms/usr/src/nouveau-dkms-2.2.0/
+	install -Dm755 nouveau-ctrl debian/nouveau-dkms/usr/bin/nouveau-ctrl
+	install -Dm755 nouveau-tui debian/nouveau-dkms/usr/bin/nouveau-tui
+	install -Dm755 nouveau-dynclockd.py debian/nouveau-dkms/usr/bin/nouveau-dynclockd.py
+	ln -sf nouveau-dynclockd.py debian/nouveau-dkms/usr/bin/nouveau-dynclockd
+	install -Dm644 nouveau.conf debian/nouveau-dkms/etc/modprobe.d/nouveau.conf
+	install -Dm644 nouveau-dynclockd.conf debian/nouveau-dkms/etc/nouveau-dynclockd.conf
+	install -d debian/nouveau-dkms/etc/nouveau-dynclockd.d
+	install -Dm644 apps.conf.sample debian/nouveau-dkms/etc/nouveau-dynclockd.d/apps.conf.sample
+	install -Dm644 nouveau-dynclockd.service debian/nouveau-dkms/lib/systemd/system/nouveau-dynclockd.service
+
+override_dh_clean:
+	dh_clean
+	rm -rf build/
