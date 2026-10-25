@@ -21,6 +21,9 @@ tmp/
 binary_driver/
 vbios_database/
 *.rom
+*.rom.xz
+tools/download-vbios-techpowerup.py
+tools/download-vbios-*.py
 nouveau_fermi_diag_report.md
 fermi_memory_reclock_report.md
 docs/NEWSFLASH.md
