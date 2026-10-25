@@ -118,7 +118,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 ## 🔋 Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)
 
 - [ ] **Replace `/proc` CPU-Tick Scanning with Hardware GPU Load Counters (`0x10a600..0x10a610`)**:
-  - Replace `get_monitored_app_ticks()` `/proc` scanning with a single `< 0.05 ms` read of hardware `GR %`, `FB %`, and `VDEC %` utilization counters. *(Hardware interrupt delta tracking implemented in `v2.1.1` via `/proc/interrupts` `nvkm`)*.
+  - Replace `get_monitored_app_ticks()` `/proc` scanning with a single `< 0.05 ms` read of hardware `GR %`, `FB %`, and `VDEC %` utilization counters. *(Hardware interrupt delta tracking implemented in `v2.2.0` via `/proc/interrupts` `nvkm`)*.
 - [x] **120 Hz Display-Aware Idle Floor (`>= 07`)**:
   - Automatically clamp `IDLE_STATE` to `07` (`405 MHz` `dispclk`, `324 MHz` DDR3) when a `> 135 MHz` pixel-clock mode (120 Hz) is active, dropping to `03` only at 60 Hz or DPMS off.
 - [x] **5-Tier Scaling Ladder (`03` ↔ `07` ↔ `0a` ↔ `0f` ↔ `10`) with Hold-Down Timers**:
