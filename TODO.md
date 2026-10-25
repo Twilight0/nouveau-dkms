@@ -93,11 +93,20 @@ This document tracks completed milestones, open engineering tasks, and the multi
 - [ ] **Hardware GPU Engine Utilization Counters (`0x10a600..0x10a610`, `_nv029625rm` / `_nv029628rm`)**:
   - Decompile `_nv029625rm` (`0x515a70`) and `_nv029628rm` (`0x515ad0`) to extract the exact signal masks for `GR %`, `FB %`, and `VDEC %` busy counters in `PDAEMON` and expose them via debugfs/sysfs.
 
-### 5. Single-Fan Shared Thermal Protection (`PTHERM`) & L2 / Z-Cull Compression
+### 5. Closing the Performance Parity Gap with NVIDIA 390.157 (The Final 15–25%)
+*(Full technical analysis: With core/shader (`590/1180 MHz`), DDR3 memory (`900 MHz`), and PCIe Gen2 (`5.0 GT/s x16`) reclocking operating at 100% silicon parity in `v2.2.0`, the remaining performance gap against NVIDIA's proprietary driver stems from raster tile compression, superscalar shader dispatch, and dynamic clock gating).*
+- [ ] **Lossless Z-Cull & Tile Depth Compression (`TAGRAM` / `PLTCG` `0x140000` / `PGRAPH`) [~15% Bandwidth Win]**:
+  - Audit and decompile `_nv010721rm` / `_nv031754rm` (`objseq` raster config) and Mesa's `nv50` driver (`nv50_surface.c` / `nv50_miptree.c`).
+  - Configure hardware Z-Cull hierarchical depth buffers and ROP color tile compression tags (`TAGRAM`). By writing compressed depth tags instead of uncompressed 32-bit float depths during shadow-map and geometry passes, memory bus pressure in 3D gaming is reduced by **30–50%**, eliminating the largest remaining throughput gap.
+- [ ] **Dual-Issue Warp Scheduling & Superscalar Execution in Mesa `nv50_ir` [~10% Shader Compute Win]**:
+  - Fermi SM20 (`GF100`/`GF104`/`GF106`) features **two warp schedulers and two instruction dispatch units per SM**, capable of co-issuing two independent instructions concurrently (e.g. ALU + TEX/MEM or INT + FP32 FMA).
+  - Enhance Mesa's `nv50_ir` instruction scheduler to aggressively pair independent instructions into dual-issue bundles matching NVIDIA's proprietary compiler, closing the instruction throughput deficit in complex fragment/compute shaders.
+- [ ] **Register Spilling Mitigation & Graph-Coloring Rematerialization in `nv50_ir`**:
+  - Improve register allocation in `nv50_ir` by implementing rematerialization of uniform expressions, constants, and address calculations to eliminate spills to slow local VRAM.
 - [ ] **Hardware `PTHERM` Auto-Slowdown (`0x00020xxx`) & Progressive Multi-Step Thermal Throttling**:
   - Because the non-Optimus Dell XPS L702X cools both the Intel CPU and NVIDIA GT 555M with a **single shared blower fan**, program hardware `PTHERM` clock-slowdown failsafes at `90–92 °C` and implement progressive governor step-down (`10` → `0f` at `78 °C` → `0a` at `82 °C` → `07` at `86 °C`).
-- [ ] **L2 Cache (`PLTCG` `0x140000`) & `PGRAPH` Z-Cull / Tile Compression Audit**:
-  - Audit `nv-kernel.o_binary`'s initialization of `PLTCG` and `PGRAPH` Z-Cull / ROP compression registers against upstream Nouveau.
+- [ ] **Fine-Grained BLCG / SLCG Hardware Clock Gating (`0x00020xxx`)**:
+  - Extract `.rodata` tables from `nv-kernel.o_binary` and program them during `gr`/`fb`/`therm` init, cutting idle leakage by `2–4 W` and providing dynamic power/thermal headroom so the core maintains maximum boost frequency without thermal throttling.
 
 ### 6. Hardware Quirk & Device Profile Database (`quirks.h`)
 - [ ] **Unified `quirks.h` Subsystem Table**:
