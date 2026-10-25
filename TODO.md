@@ -59,8 +59,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 ### 1. Eliminating Screen Flashes During Clock Changes (True Zero-Flash VBlank Memory Reclocking)
 *(Full hardware specification in [`RECLOCKING_NOTES.md` §10.4](RECLOCKING_NOTES.md#104-nv-kernelo_binary-the-rm-sequencer-objseq--seqscript--memx-bytecode-emitter-api--zero-flash-vblank-pipeline). 390-blob REA: `nv-kernel.o_binary` string-anchored functions `_nv010494rm` (`RmIsoHubMCLKSwitch`), `_nv012821rm` (`RMOnDemandVBlank`), `_nv012818rm` (`RMGlitchlessModeset`, 0xdb5 bytes), `_nv011282rm` (`RmNvsrFlickerControl`), `_nv019868rm` (`RMFermiMinGpmFifoDepth`); static objdump+reloc-xref route, Ghidra not required)*
 - [ ] **Move `WAIT_VBLANK` Inside `memx_exec_custom.fuc` (`< 50 ns` Reaction Latency)**:
-  - Host-side `gf100_ram_wait_vblank()` still suffers from host scheduling/MMIO latency after VBlank onset, pushing the ~150–250 µs `STOP_FB` window past the ~370 µs VBlank budget.
-  - Poll the active CRTC's VBlank / raster status (`0x6160f8` / `0x616340`) directly inside the resident Falcon microcode immediately before asserting `STOP_FB` (`0x10a50c = 1` / `0x100c80 = 1`), matching `_nv031916rm` (opcode `0x14`). Blob's `_nv012821rm` is an on-demand gate (proceed-only-if-safe-window, else defer) — replicate the deferral, not just the poll.
+  - *(Note: Hardware testing showed Falcon v3 PRIVRING access to display raster registers `0x616340` causes MMIO aborts on GF106. Host-side signed-`vpos` sync in `ramgf100.c` resolved visual stutter completely in `v2.2.0` by landing the entire 477–535 µs reclock inside VBlank. In-Falcon polling remains an architectural research item for chips with PMU PRIVRING apertures).*
 - [ ] **Pre-`STOP_FB` Display `ISOHUB` Critical Watermark Spool-Up (`_nv031916rm` / `_nv031860rm`, `_nv010494rm`)**:
   - Boost `ISOHUB` (`0x616300+` / `0x610050`) watermarks to critical force-fill mode before `WAIT_VBLANK` so the display line buffer FIFO is 100% full before DRAM enters Self-Refresh, and restore normal watermarks after `RESTART_FB`. `_nv010494rm` (`.text+0xebac0`, string-xref at `+0xebba7`) is the blob's hub-switch sequencer — disassemble for exact order.
 - [ ] **GPM FIFO Minimum-Depth Guard (`_nv019868rm`, `RMFermiMinGpmFifoDepth`)**:
@@ -68,9 +67,9 @@ This document tracks completed milestones, open engineering tasks, and the multi
 - [ ] **Treat Glitchless as a Modeset Property (`_nv012818rm`, `RMGlitchlessModeset`)**:
   - Blob sequences display-timing changes through a dedicated state machine that keeps the pipeline fed; our reclock bypasses modeset entirely. Long-term: route MCLK transitions through the atomic commit path instead of firing them from the governor side-channel.
 - [ ] **FB Partition Write-Buffer Flush (`0x13d7f4 + (part << 6)`, `_nv031754rm` Opcode `0x3a`)**:
-  - Emit the per-partition write-buffer drain after programming PHY DLL registers (`0x10f824`) and before releasing `STOP_FB`.
-- [ ] **Pre-Warm Falcon Executor at Boot/Resume & Decouple PCIe Retraining**:
-  - Run cold Falcon bootstrap during init/resume while display is blanked so runtime P-state changes always take the fast path, and schedule PCIe Gen1 ↔ Gen2 link retraining on a separate VBlank edge from MCLK switches.
+  - Emit the per-partition write-buffer drain after programming PHY DLL registers (`0x10f824`) and before releasing `STOP_FB`. *(Note: GF106 has 3 partitions; writing to non-existent partition 3 `0x13d8f4` causes PRIVRING fault)*.
+- [x] **Pre-Warm Falcon Executor at Boot/Resume & Decouple PCIe Retraining**:
+  - Pre-warms the resident Falcon executor at initial 324 MHz boot (`gf100_ram_calc_ddr3()`) so runtime P-state changes execute on the sub-millisecond resident fast-path without cold PDAEMON resets. PCIe link retraining ordering is preserved before `calc`.
 
 ### 2. Synthetic Intermediate Performance State (P3 / State `0a`)
 *(Full derivation in [`RECLOCKING_NOTES.md` §10.5–§10.7](RECLOCKING_NOTES.md#105-nv-kernelo_binary-fermi-mclk--mempll-0x132000--0x132004-reclocking-state-machines))*
@@ -166,7 +165,7 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
 
 | Generation | Chip Families | GeForce Series | Firmware Security | `nouveau-reclocking-dkms` Target Roadmap |
 | :--- | :--- | :--- | :---: | :--- |
-| **Fermi** (`NVC0`–`NVCF`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | ✅ **Working on GF106 (`v2.1.0`)!** Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips. |
+| **Fermi** (`NVC0`–`NVCF`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | ✅ **Working on GF106 (`v2.2.0`)!** Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips. |
 | **Kepler** (`NVE0`–`NV108`) | `GK104`–`GK208` | GeForce 600 / 700 / 800M | **Unsigned Falcon** | Add automatic governor support, GPU Boost 1.0/2.0 interpolation, mobile `GK107M`/`GK208M` RAM fixes, and `MSENC` (`0x1c8000`) VA-API encode. |
 | **Maxwell 1** (`NV117`–`NV118`) | `GM107`–`GM108` | GTX 750 / 750 Ti, GTX 850M–960M, MX110/MX130 | **Unsigned Falcon!** | **High-Value Target**: First-gen Maxwell has **no signed PMU lockdown** and is fully supported in `390.157`! Port custom Falcon PMU + PLL/RAM reclocking to `GM107`/`GM108`. |
 | **Tesla** (`NV50`–`NVA8`) | `G80`–`GT218` | GeForce 8000 / 9000 / 200 / 300 | **Unsigned** | Stabilize `GT215`–`GT218` PDAEMON/host reclocking and integrate `nouveau-dynclockd`. |
@@ -177,8 +176,8 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
   - Consolidate `LINUX_VERSION_CODE` API wrappers (such as the `6.18.55` `drm_client_dev_suspend` shim landed in `v2.1.0` and upcoming `6.19+` DRM/TTM shifts) into a dedicated `nouveau_compat.h` header so a single codebase compiles cleanly across `6.12 LTS`, `6.18 LTS`, and mainline kernels.
 - [ ] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
   - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` against `linux-cachyos-lts`, `linux-cachyos`, Arch `linux`, and `linux-lts` headers, and runs `shellcheck` / `py_compile` on userspace scripts.
-- [ ] **Package Rename / Transition (done: `nouveau-dkms`, was `nouveau-fermi-reclock-dkms`)**:
-  - `PKGBUILD` carries `provides=('nouveau-fermi-reclock-dkms')`, `conflicts=('nouveau-fermi-reclock-dkms' 'nouveau-fermi-reclock-cachyos-lts-v2')`, `replaces=('nouveau-fermi-reclock-dkms')` so the old AUR package and prebuilt upgrade cleanly.
+- [x] **Package Rename / Transition (done: `nouveau-dkms`, was `nouveau-fermi-reclock-dkms`)**:
+  - `PKGBUILD` carries `provides=('nouveau-fermi-reclock-dkms')`, `conflicts=('nouveau-fermi-reclock-dkms' 'nouveau-fermi-reclock-cachyos-lts-v2')`, `replaces=('nouveau-fermi-reclock-dkms')` so the old AUR package and prebuilt upgrade cleanly. Completed on AUR and AliveOS repository.
 - [ ] **Cross-Distribution Packaging Pipeline (`.github/workflows/release-packages.yml`)**:
   1. **Arch Linux / AliveOS / CachyOS / Manjaro (`.pkg.tar.zst`)**: `PKGBUILD` + `.SRCINFO` + `pacman` hooks.
   2. **Debian / Ubuntu / Linux Mint / Pop!_OS (`.deb`)**: `debian/` packaging with `dh-dkms`, `dpkg-buildpackage`, and `update-initramfs -u` hooks.
