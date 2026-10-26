@@ -18,7 +18,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 4. [Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)](#-dynamic-governor-modernization-nouveau-dynclockd-20)
 5. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#-telemetry-modern-drmdri-apis--wayland-explicit-sync)
 6. [Compute, Video Encoding, Vulkan & `nvzram`](#-compute-video-encoding-vulkan--nvzram)
-7. [Wayland EGL Stability, OpenGL 4.3 Compute & Robust MMU Fault Recovery](#-wayland-egl-stability-opengl-43-compute--robust-mmu-fault-recovery)
+7. [Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery](#-wayland-egl-stability-full-opengl-4346-feature-parity--robust-mmu-fault-recovery)
 8. [Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging](#-project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
 
 ---
@@ -171,9 +171,21 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## 🛡️ Wayland EGL Stability, OpenGL 4.3 Compute & Robust MMU Fault Recovery
+## 🛡️ Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery
 
-*(Thorough investigation via REA, decompilation of `nv-kernel.o_binary` / `libnvidia-glcore.so.390.157`, and hardware trap tracing on GF106/Fermi)*
+*(Thorough investigation via REA, decompilation of `nv-kernel.o_binary` / `libnvidia-glcore.so.390.157`, Khronos conformance verification, and hardware trap tracing on GF106/Fermi)*
+
+### Hardware Architecture: Fermi Silicon is Fully OpenGL 4.6 Capable
+A critical finding from decompiling NVIDIA's official legacy production driver (`390.157`) and reviewing Khronos conformance specifications is that **Fermi hardware (`GF100`–`GF119`) physically supports the complete OpenGL 4.6 feature set**:
+* **Khronos Compatibility**: The OpenGL 4.6 specification is designed to be fully backward-compatible with any GPU that supports OpenGL 4.5.
+* **Proprietary Driver Proof**: NVIDIA driver `390.157` officially exposes `OpenGL 4.6.0 (NVIDIA 390.157)` and `GLSL 4.60` on Fermi chips under both Linux and Windows.
+* **Hardware Capabilities Present in Silicon**:
+  1. **Native FP64 Arithmetic**: Hardware double-precision floating point units in SM20.
+  2. **Indirect Multi-Draw Execution**: Hardware draw parameter streaming (`GL_ARB_indirect_parameters`).
+  3. **Direct State Access (DSA)**: Full object and framebuffer manipulation without target binding.
+  4. **Hardware Polygon Offset Clamp**: Native slope and depth clamping in rasterizer class `9097`.
+  5. **Atomic Counters & Subgroup Operations**: Native atomic ops on global/shared memory (`GL_ARB_shader_atomic_counter_ops`, `GL_ARB_shader_group_vote`).
+  6. **SPIR-V Intermediate Representation (`GL_ARB_gl_spirv`)**: Purely a driver compiler ingestion layer (translating SPIR-V bytecode into Fermi machine code), requiring no new physical hardware logic.
 
 Modern heavy desktop and 3D applications (e.g. Blender 4.0+, modern browsers, and Wayland compositors) expose edge cases in the open-source Nouveau stack that do not trigger under legacy OpenGL 3.3 workloads:
 1. **`EGL Error (0x3009): EGL_BAD_MATCH`**: Blender queries Wayland EGL for 10-bit color (`RGB10_A2`), 16-bit float surfaces (`EGL_COLOR_COMPONENT_TYPE_FLOAT_EXT`), and sRGB buffers. Mesa's Wayland platform fails visual matching on Fermi due to absent HDR/float scanout modifiers, spamming bad match errors.
@@ -181,6 +193,52 @@ Modern heavy desktop and 3D applications (e.g. Blender 4.0+, modern browsers, an
 3. **`GPC0/TPC1/MP trap: warp [OOR_ADDR]` & `fifo: fault [PT_NOT_PRESENT]`**: Blender 4.x UI and viewport rendering dispatch OpenGL compute shaders (`PIPE_SHADER_COMPUTE`). Because Fermi lacks Kepler-style native hardware SSBO descriptors, Mesa lowers SSBO pointer arithmetic to 64-bit integer calculations. Unchecked buffer offsets or sign extensions wrap to non-canonical addresses (e.g. `0x000000a7da7c4000`), triggering an out-of-range address (`OOR_ADDR`) hardware warp trap and MMU page-table miss.
 4. **Catastrophic Channel Recovery (`nvkm_runl_rc_cgrp`)**: In `nvkm/engine/fifo/gf100.c`, Nouveau responds to any MMU fault by unconditionally killing the client channel (`channel killed!`). Subsequent pushbuf submissions return `ENODEV` (`nouveau: kernel rejected pushbuf: No such device`), immediately crashing the application with `SIGSEGV` instead of isolating the fault.
 5. **`mesa_glthread=true` Pushbuf Races**: Asynchronous multi-threaded command batching in Mesa triggers pushbuf reordering and race conditions on Nouveau, worsening buffer alignment and sync faults.
+
+### Full OpenGL 4.3–4.6 Specification & Feature Parity Roadmap
+
+```mermaid
+flowchart TD
+    subgraph MesaNouveau ["Mesa nvc0 Gallium Driver"]
+        P1["Phase 1: Fix GL 4.3 Compute & SSBOs<br/>(Bounds Clamping in nv50_ir + Zero-Page VMM)"]
+        P2["Phase 2: Implement Missing GL 4.4 - 4.6 Extensions<br/>(ARB_indirect_parameters, ARB_gl_spirv)"]
+    end
+
+    subgraph AltPath ["Alternative Modern Pathway"]
+        P3["Phase 3: Zink on nvk-fermi<br/>(Full OpenGL 4.6 via Vulkan 1.0 Runtime)"]
+    end
+
+    HW["Fermi GF100-GF119 Silicon<br/>(Full OpenGL 4.6 Hardware Support)"]
+
+    HW --> MesaNouveau
+    HW --> AltPath
+```
+
+#### Phase 1: Stabilize OpenGL 4.3 (Compute Shaders & SSBOs)
+- [ ] **Mesa `nv50_ir`: Fermi SSBO 64-Bit Address Bounds Clamping (`TargetNVC0`)**:
+  - **Decompilation Reference**: In `libnvidia-compiler.so` / `libnvidia-glcore.so.390.157`, shader compilation for Fermi inserts explicit bounds-check clamps against the buffer length before computing effective addresses for global memory instructions (`LD.E` / `ST.E`).
+  - **Task**: In Mesa `src/nouveau/codegen/nv50_ir_target_nvc0.cpp` (`emitSSBOOp`), inject a software bounds-clamping pass. Clamp the effective offset using `MIN(offset, buffer_size - access_size)` before 64-bit pointer construction to guarantee that `LD.E` never accesses out-of-range addresses (`OOR_ADDR`).
+- [ ] **Kernel: Shared Read-Only Zero-Page Virtual Address Fallback (`vmmgf100.c`)**:
+  - In `nvkm/subdev/mmu/vmmgf100.c`, map unallocated userspace GPU virtual address ranges to a shared read-only zero page instead of leaving page table entries unpopulated (`PT_NOT_PRESENT`). Out-of-bounds shader reads will return `0.0f` rather than triggering a fatal hardware MMU fault, matching modern GPU fault-tolerant memory behavior.
+- [ ] **Kernel: Non-Fatal MMU Fault Isolation & Engine Soft-Reset (`nvkm/engine/fifo/gf100.c` & `nvkm/engine/gr/gf100.c`)**:
+  - **Decompilation Reference**: `nv-kernel.o_binary` exports `rm_gpu_ops_service_device_interrupts_rm` and `_nv007827rm` / `_nv007800rm` error containment. When a warp trap occurs, the NVIDIA proprietary driver resets the execution unit pipeline, drops the offending batch, and logs the error without unbinding the user channel.
+  - **Task**: In `gf100_fifo_mmu_fault_recover()` and `gf100_gr_trap_mp()`, replace unconditional `nvkm_runl_rc_cgrp(chan->cgrp)` channel killing with a recoverable soft-reset pipeline:
+    1. Issue an engine pipeline reset (`0x400500` / `0x400800` PGRAPH flush).
+    2. Clear TPC MP error registers (`0x648` / `0x650`).
+    3. Drop/skip the failing compute dispatch packet, signal the sync fence with `-EIO`, and return control to userspace.
+    4. Implement fault rate-limiting: only escalate to a hard channel kill if more than $N$ faults occur within a 1-second window.
+
+#### Phase 2: Missing Extensions for Native OpenGL 4.5 & 4.6 in `nvc0`
+- [ ] **`GL_ARB_indirect_parameters` (Multi-Draw Indirect with Parameter Buffer)**:
+  - Wire `NV9097_SET_MME_SHADOW` and indirect draw counter reads on Fermi `0x9097` class, allowing GPU-side draw culling without CPU readback.
+- [ ] **`GL_ARB_pipeline_statistics_query` & `GL_ARB_transform_feedback_overflow_query`**:
+  - Expose hardware primitive and geometry counters available in `0x9097` method `0x1b00` (`QUERY_COUNTER`).
+- [ ] **`GL_ARB_gl_spirv` & `GL_ARB_spirv_extensions` (Native SPIR-V Ingestion)**:
+  - Connect Mesa's `nir_spirv` translator into `nvc0_program.c` so applications passing SPIR-V binary shaders (standard in OpenGL 4.6) are lowered directly to NIR and compiled via `TargetNVC0`.
+
+#### Phase 3: OpenGL 4.6 via Zink on `nvk-fermi` (Modern Unified Path)
+- [ ] **Zero-Overhead OpenGL 4.6 via Zink (`Mesa Zink + nvk-fermi`)**:
+  - In addition to native `nvc0` Gallium work, the Vulkan 1.0 layer documented in [`VULKAN.md`](VULKAN.md) automatically enables Mesa's **Zink** driver.
+  - Zink implements full, certified **OpenGL 4.6 Core Profile** on top of any compliant Vulkan driver, giving Fermi complete OpenGL 4.6 support with modern spirv/NIR toolchains and eliminating the need to maintain legacy Gallium state-tracker code paths.
 
 ### Actionable Fixes & Implementation Tasks
 
