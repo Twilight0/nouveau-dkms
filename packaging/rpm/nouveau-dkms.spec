@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.2.0
+Version:        2.2.1
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -56,6 +56,10 @@ fi
 %config(noreplace) %{_sysconfdir}/modprobe.d/nouveau.conf
 
 %changelog
+* Mon Oct 26 2026 Twilight0 <twilight0@vivaldi.net> - 2.2.1-1
+- Release v2.2.1: Packaging and code separation.
+- Pure DKMS kernel driver package cleanly decoupled from nouveau-utils.
+
 * Mon Oct 26 2026 Twilight0 <twilight0@vivaldi.net> - 2.2.0-1
 - Decouple nouveau-utils into standalone userspace package.
 - Pure DKMS kernel module and modprobe directives.

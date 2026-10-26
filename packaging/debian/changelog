@@ -1,3 +1,11 @@
+nouveau-dkms (2.2.1-1) unstable; urgency=medium
+
+  * Release v2.2.1: Packaging and code separation.
+  * Decouple userspace governor, CLI, and TUI into standalone nouveau-utils.
+  * Kernel module package now cleanly recommends nouveau-utils.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Mon, 26 Oct 2026 09:45:00 +0200
+
 nouveau-dkms (2.2.0-1) unstable; urgency=medium
 
   * Release v2.2.0: Zero-stutter VBlank-onset memory reclocking.

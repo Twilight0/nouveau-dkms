@@ -3,15 +3,15 @@
 	dh $@
 
 override_dh_auto_build:
-	mkdir -p build/nouveau-dkms-2.2.0
+	mkdir -p build/nouveau-dkms-2.2.1
 	tar -xzf nouveau-source.tar.gz -C build/
 	patch -Np1 -d build/nouveau-source < nouveau.patch
-	cp -r build/nouveau-source/* build/nouveau-dkms-2.2.0/
-	sed 's/@PKGVER@/2.2.0/g' dkms.conf > build/nouveau-dkms-2.2.0/dkms.conf
+	cp -r build/nouveau-source/* build/nouveau-dkms-2.2.1/
+	sed 's/@PKGVER@/2.2.1/g' dkms.conf > build/nouveau-dkms-2.2.1/dkms.conf
 
 override_dh_auto_install:
-	install -d debian/nouveau-dkms/usr/src/nouveau-dkms-2.2.0
-	cp -r build/nouveau-dkms-2.2.0/* debian/nouveau-dkms/usr/src/nouveau-dkms-2.2.0/
+	install -d debian/nouveau-dkms/usr/src/nouveau-dkms-2.2.1
+	cp -r build/nouveau-dkms-2.2.1/* debian/nouveau-dkms/usr/src/nouveau-dkms-2.2.1/
 	install -Dm644 nouveau.conf debian/nouveau-dkms/etc/modprobe.d/nouveau.conf
 
 override_dh_clean:

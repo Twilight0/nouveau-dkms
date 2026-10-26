@@ -1,4 +1,4 @@
-# nouveau-dkms (`v2.2.0`)
+# nouveau-dkms (`v2.2.1`)
 
 Out-of-tree **Nouveau DKMS kernel module** and dynamic GPU frequency/power governor unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and 120 Hz eDP display support on Linux `6.18+`—evolving into **`nouveau-reclocking-dkms`** for pre-`Nova` NVIDIA GPUs.
 
@@ -8,7 +8,7 @@ Out-of-tree **Nouveau DKMS kernel module** and dynamic GPU frequency/power gover
 
 ---
 
-## Key Features (`v2.2.0`)
+## Key Features (`v2.2.1`)
 
 - **Full Bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**:
   - Custom resident Falcon microcode executor (`memx_exec_custom.fuc`) running on the Fermi `PDAEMON` microcontroller (`0x10a000`) via sub-millisecond MMIO mailboxes (`SCRATCH2` / `SCRATCH3`).
