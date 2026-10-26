@@ -18,7 +18,8 @@ This document tracks completed milestones, open engineering tasks, and the multi
 4. [Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)](#-dynamic-governor-modernization-nouveau-dynclockd-20)
 5. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#-telemetry-modern-drmdri-apis--wayland-explicit-sync)
 6. [Compute, Video Encoding, Vulkan & `nvzram`](#-compute-video-encoding-vulkan--nvzram)
-7. [Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging](#-project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
+7. [Wayland EGL Stability, OpenGL 4.3 Compute & Robust MMU Fault Recovery](#-wayland-egl-stability-opengl-43-compute--robust-mmu-fault-recovery)
+8. [Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging](#-project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
 
 ---
 
@@ -167,6 +168,41 @@ This document tracks completed milestones, open engineering tasks, and the multi
   4. Reverse-engineer Kepler (`GK104+`) & Maxwell (`GM107+`) fixed-function `MSENC` (`0x1c8000`) for VA-API H.264 encoding.
 - [ ] **Fermi Vulkan 1.0 / 1.1 (`nvk-fermi` Bound Descriptor Lowering — [`VULKAN.md`](VULKAN.md))**:
   - Prototype a `hasvk`-style bound-descriptor lowering pass (`128 TIC` / `32 TSC` slots per stage) pairing `NVK`'s command buffer/sync runtime with Mesa's `NIR → nv50_ir` (`TargetNVC0`) compiler backend.
+
+---
+
+## 🛡️ Wayland EGL Stability, OpenGL 4.3 Compute & Robust MMU Fault Recovery
+
+*(Thorough investigation via REA, decompilation of `nv-kernel.o_binary` / `libnvidia-glcore.so.390.157`, and hardware trap tracing on GF106/Fermi)*
+
+Modern heavy desktop and 3D applications (e.g. Blender 4.0+, modern browsers, and Wayland compositors) expose edge cases in the open-source Nouveau stack that do not trigger under legacy OpenGL 3.3 workloads:
+1. **`EGL Error (0x3009): EGL_BAD_MATCH`**: Blender queries Wayland EGL for 10-bit color (`RGB10_A2`), 16-bit float surfaces (`EGL_COLOR_COMPONENT_TYPE_FLOAT_EXT`), and sRGB buffers. Mesa's Wayland platform fails visual matching on Fermi due to absent HDR/float scanout modifiers, spamming bad match errors.
+2. **`DATA_ERROR 00000004 [INVALID_VALUE]` on Method `0x0804`**: Class `9097` (`GF100_3D`) method `0x0804` (`NV9097_SET_COLOR_TARGET_B(0)`) requires render target base addresses to be aligned to **256 bytes (`0x100`)**. Passing suballocated or unaligned offsets (e.g. `0x03c9b908`, 8-byte aligned) trips hardware validation.
+3. **`GPC0/TPC1/MP trap: warp [OOR_ADDR]` & `fifo: fault [PT_NOT_PRESENT]`**: Blender 4.x UI and viewport rendering dispatch OpenGL compute shaders (`PIPE_SHADER_COMPUTE`). Because Fermi lacks Kepler-style native hardware SSBO descriptors, Mesa lowers SSBO pointer arithmetic to 64-bit integer calculations. Unchecked buffer offsets or sign extensions wrap to non-canonical addresses (e.g. `0x000000a7da7c4000`), triggering an out-of-range address (`OOR_ADDR`) hardware warp trap and MMU page-table miss.
+4. **Catastrophic Channel Recovery (`nvkm_runl_rc_cgrp`)**: In `nvkm/engine/fifo/gf100.c`, Nouveau responds to any MMU fault by unconditionally killing the client channel (`channel killed!`). Subsequent pushbuf submissions return `ENODEV` (`nouveau: kernel rejected pushbuf: No such device`), immediately crashing the application with `SIGSEGV` instead of isolating the fault.
+5. **`mesa_glthread=true` Pushbuf Races**: Asynchronous multi-threaded command batching in Mesa triggers pushbuf reordering and race conditions on Nouveau, worsening buffer alignment and sync faults.
+
+### Actionable Fixes & Implementation Tasks
+
+- [ ] **Kernel: Non-Fatal MMU Fault Isolation & Engine Soft-Reset (`nvkm/engine/fifo/gf100.c` & `nvkm/engine/gr/gf100.c`)**:
+  - **Decompilation Reference**: `nv-kernel.o_binary` exports `rm_gpu_ops_service_device_interrupts_rm` and `_nv007827rm` / `_nv007800rm` error containment. When a warp trap occurs, the NVIDIA proprietary driver resets the execution unit pipeline, drops the offending batch, and logs the error without unbinding the user channel.
+  - **Task**: In `gf100_fifo_mmu_fault_recover()` and `gf100_gr_trap_mp()`, replace unconditional `nvkm_runl_rc_cgrp(chan->cgrp)` channel killing with a recoverable soft-reset pipeline:
+    1. Issue an engine pipeline reset (`0x400500` / `0x400800` PGRAPH flush).
+    2. Clear TPC MP error registers (`0x648` / `0x650`).
+    3. Drop/skip the failing compute dispatch packet, signal the sync fence with `-EIO`, and return control to userspace.
+    4. Implement fault rate-limiting: only escalate to a hard channel kill if more than $N$ faults occur within a 1-second window.
+- [ ] **Kernel: Shared Read-Only Zero-Page Virtual Address Fallback (`vmmgf100.c`)**:
+  - In `nvkm/subdev/mmu/vmmgf100.c`, map unallocated userspace GPU virtual address ranges to a shared read-only zero page instead of leaving page table entries unpopulated (`PT_NOT_PRESENT`). Out-of-bounds shader reads will return `0.0f` rather than triggering a fatal hardware MMU fault, matching modern GPU fault-tolerant memory behavior.
+- [ ] **Kernel & Mesa: Color Target 256-Byte (`0x100`) Base Alignment Enforcement**:
+  - Enforce strict `ALIGN(offset, 256)` in `nouveau_bo.c` / `nouveau_gem.c` and Mesa's `nvc0_surface.c` for all render target base addresses sent to method `0x0804` (`NV9097_SET_COLOR_TARGET_B`), eliminating PGRAPH `DATA_ERROR 00000004 [INVALID_VALUE]` on suballocated surfaces.
+- [ ] **Mesa `nv50_ir`: Fermi SSBO 64-Bit Address Bounds Clamping (`TargetNVC0`)**:
+  - **Decompilation Reference**: In `libnvidia-compiler.so` / `libnvidia-glcore.so.390.157`, shader compilation for Fermi inserts explicit bounds-check clamps against the buffer length before computing effective addresses for global memory instructions (`LD.E` / `ST.E`).
+  - **Task**: In Mesa `src/nouveau/codegen/nv50_ir_target_nvc0.cpp` (`emitSSBOOp`), inject a software bounds-clamping pass. Clamp the effective offset using `MIN(offset, buffer_size - access_size)` before 64-bit pointer construction to guarantee that `LD.E` never accesses out-of-range addresses (`OOR_ADDR`).
+- [ ] **Mesa / Wayland: EGL Visual Format Matching & Graceful Fallback (`platform_wayland.c`)**:
+  - In Mesa's `src/egl/drivers/dri2/platform_wayland.c`, improve visual probing for pre-Kepler hardware: filter out unsupported 10-bit (`RGB10_A2`) and float formats on Fermi without returning `EGL_BAD_MATCH`, allowing Wayland compositors and apps to match standard 8-bit visuals cleanly.
+- [ ] **Packaging & Userspace: Nouveau Fermi `drirc` & Transparent Launcher Fallbacks**:
+  - Provide `/usr/share/drirc.d/10-nouveau-fermi.conf` (or `nouveau-utils` default config) setting `mesa_glthread=false` for all applications running on the Nouveau driver, preventing asynchronous pushbuf reordering bugs.
+  - In application wrappers (e.g. `blender-4.5.sh`), detect Nouveau on Wayland and provide intelligent fallback options (`WAYLAND_DISPLAY="" DISPLAY=:0` or `LIBGL_ALWAYS_SOFTWARE=1`) until kernel fault containment and Mesa bounds clamping are fully upstreamed.
 
 ---
 
