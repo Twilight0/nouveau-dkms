@@ -122,6 +122,9 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           if [[ "$TAG" == "master" || "$TAG" == "main" ]]; then
-            TAG="v2.2.0"
+            TAG="v2.2.1"
+          fi
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --title "$TAG" --notes "Release $TAG: Packaging and code separation"
           fi
           gh release upload "$TAG" release-assets/* --clobber
