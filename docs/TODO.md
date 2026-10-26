@@ -1,6 +1,6 @@
 # 📋 Roadmap & TODO (`TODO.md`)
 
-This document tracks completed milestones, open engineering tasks, and the multi-architecture roadmap for **`nouveau-reclocking-dkms`** (currently packaged as `nouveau-dkms`).
+This document tracks completed milestones, open engineering tasks, and the multi-architecture roadmap for **`nouveau-dkms`**.
 
 ### Documentation Map
 - **[`RECLOCKING_NOTES.md`](RECLOCKING_NOTES.md)**: Hardware register tables, Falcon microcode architecture, and decompiled NVIDIA `390.157` (`nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`) specifications.
@@ -18,7 +18,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 4. [Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)](#-dynamic-governor-modernization-nouveau-dynclockd-20)
 5. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#-telemetry-modern-drmdri-apis--wayland-explicit-sync)
 6. [Compute, Video Encoding, Vulkan & `nvzram`](#-compute-video-encoding-vulkan--nvzram)
-7. [Project Evolution: `nouveau-reclocking-dkms`, Multi-Kernel CI & Cross-Distro Packaging](#-project-evolution-nouveau-reclocking-dkms-multi-kernel-ci--cross-distro-packaging)
+7. [Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging](#-project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
 
 ---
 
@@ -168,11 +168,11 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## 🚀 Project Evolution: `nouveau-reclocking-dkms`, Multi-Kernel CI & Cross-Distro Packaging
+## 🚀 Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging
 
-Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`NV160+`) and newer GSP-based GPUs while upstream `nouveau` is in maintenance freeze for pre-Turing silicon, this project is evolving into **`nouveau-reclocking-dkms`**—an actively maintained out-of-tree DKMS driver and compute stack covering all **pre-`Nova` NVIDIA architectures**:
+Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`NV160+`) and newer GSP-based GPUs while upstream `nouveau` is in maintenance freeze for pre-Turing silicon, this project serves as **`nouveau-dkms`**—an actively maintained out-of-tree DKMS driver and compute stack covering all **pre-`Nova` NVIDIA architectures**:
 
-| Generation | Chip Families | GeForce Series | Firmware Security | `nouveau-reclocking-dkms` Target Roadmap |
+| Generation | Chip Families | GeForce Series | Firmware Security | `nouveau-dkms` Target Roadmap |
 | :--- | :--- | :--- | :---: | :--- |
 | **Fermi** (`NVC0`–`NVCF`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | ✅ **Working on GF106 (`v2.2.0`)!** Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips. |
 | **Kepler** (`NVE0`–`NV108`) | `GK104`–`GK208` | GeForce 600 / 700 / 800M | **Unsigned Falcon** | Add automatic governor support, GPU Boost 1.0/2.0 interpolation, mobile `GK107M`/`GK208M` RAM fixes, and `MSENC` (`0x1c8000`) VA-API encode. |

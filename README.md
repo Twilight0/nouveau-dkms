@@ -1,6 +1,6 @@
 # nouveau-dkms (`v2.2.1`)
 
-Out-of-tree **Nouveau DKMS kernel module** and dynamic GPU frequency/power governor unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and 120 Hz eDP display support on Linux `6.18+`—evolving into **`nouveau-reclocking-dkms`** for pre-`Nova` NVIDIA GPUs.
+Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and 120 Hz eDP display support on Linux `6.18+`—serving as the unified out-of-tree reclocking driver for pre-`Nova` NVIDIA GPUs.
 
 > [!WARNING]
 > **EXPERIMENTAL HARDWARE DRIVER**
@@ -107,7 +107,7 @@ All reverse-engineering findings (including Ghidra + REA decompilation of NVIDIA
 | :--- | :--- |
 | **[`DRIVER_COMPARISON.md`](docs/DRIVER_COMPARISON.md)** | Detailed comparison matrix & user benefits: `nouveau-dkms` vs. legacy official NVIDIA drivers (`390.157` / `470.xx`) vs. stock upstream Nouveau. |
 | **[`RECLOCKING_NOTES.md`](docs/RECLOCKING_NOTES.md)** | Master hardware & reverse-engineering reference: `GF106` DDR3 register sequences, Falcon `memx_exec_custom.fuc` design, S3 recovery, and concrete decompilation of `NVIDIA-Linux-x86_64-390.157` (`nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`). |
-| **[`TODO.md`](docs/TODO.md)** | Completed milestones (`v1.0`–`v2.2.0`), active engineering tasks (synthetic P3 `0a`, 120 Hz 6 bpc eDP, BLCG/SLCG, `0x10a600` load counters), and the **`nouveau-reclocking-dkms`** roadmap for all pre-`Nova` GPUs (Tesla, Fermi, Kepler, Maxwell 1 `GM107`/`GM108`, Maxwell 2/Pascal). |
+| **[`TODO.md`](docs/TODO.md)** | Completed milestones (`v1.0`–`v2.2.1`), active engineering tasks (synthetic P3 `0a`, 120 Hz 6 bpc eDP, BLCG/SLCG, `0x10a600` load counters), and the **`nouveau-dkms`** roadmap for all pre-`Nova` GPUs (Tesla, Fermi, Kepler, Maxwell 1 `GM107`/`GM108`, Maxwell 2/Pascal). |
 | **[`VRAM_AI.md`](docs/VRAM_AI.md)** | OpenCL 3.0 (`Mesa Rusticl`), Local LLM/SLM inference guide (`llama.cpp` + `CLBlast`), Mode A (`VRAM + GART` unified memory for `> 3 GiB` models), Mode B (`/dev/nvram0` `PCOPY` DMA block device), and **`nvzram`** (GPU-accelerated `SM20` Warp-LZ4 compressed swap in VRAM). |
 | **[`VULKAN.md`](docs/VULKAN.md)** | Architectural analysis and implementation blueprint for Vulkan 1.0/1.1 on Fermi (`nvk-fermi` bound `TIC`/`TSC` descriptor lowering paired with Mesa's `NIR → nv50_ir` backend). |
 | **[`NVENC.md`](docs/NVENC.md)** | Video encoding & decoding architecture: `x264 --opencl` lookahead, the planned 4-stage **Hybrid Compute-Shader `VA-API` H.264 Encoder** for OBS Studio (`NVCUVENC` equivalent), `VP4` PureVideo HD firmware extraction, and Kepler/Maxwell `MSENC` (`0x1c8000`). |
