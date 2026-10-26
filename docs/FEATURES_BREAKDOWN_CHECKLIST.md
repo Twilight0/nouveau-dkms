@@ -8,9 +8,9 @@ It also documents the distribution and maintenance strategy for upstream compone
 
 ## Table of Contents
 1. [Architectural Overview & Separation Blueprint](#1-architectural-overview--separation-blueprint)
-2. [Category 1: Inside the Kernel Driver (`nouveau.ko` / `nouveau-reclocking-dkms`)](#2-category-1-inside-the-kernel-driver-nouveauko--nouveau-reclocking-dkms)
+2. [Category 1: Inside the Kernel Driver (`nouveau.ko` / `nouveau-dkms`)](#2-category-1-inside-the-kernel-driver-nouveauko--nouveau-dkms)
 3. [Category 2: Upstream User-Space Projects (Mesa, Compilers, Runtimes)](#3-category-2-upstream-user-space-projects-mesa-compilers-runtimes)
-4. [Category 3: Companion User-Space Utilities Suite (`nouveau-tools`)](#4-category-3-companion-user-space-utilities-suite-nouveau-tools)
+4. [Category 3: Companion User-Space Utilities Suite (`nouveau-utils`)](#4-category-3-companion-user-space-utilities-suite-nouveau-utils)
 5. [Upstream Strategy: Benefiting from Changes Without Upstream Approval](#5-upstream-strategy-benefiting-from-changes-without-upstream-approval)
 6. [Master Implementation Checklist](#6-master-implementation-checklist)
 
@@ -20,14 +20,14 @@ It also documents the distribution and maintenance strategy for upstream compone
 
 ```mermaid
 graph TD
-    subgraph KERNEL["1. Kernel Driver Repository (nouveau-reclocking-dkms)"]
+    subgraph KERNEL["1. Kernel Driver Repository (nouveau-dkms)"]
         K1["nouveau.ko (Out-of-Tree DKMS Driver)"]
         K2["Resident Falcon Microcode (memx_exec_custom.fuc)"]
         K3["Kernel Compatibility Shims (nouveau_compat.h)"]
         K4["VRAM Block Device /dev/nvram0 (Mode B Engine)"]
     end
 
-    subgraph TOOLS["2. Companion Utilities Suite (nouveau-tools / bundled)"]
+    subgraph TOOLS["2. Standalone Companion Suite (nouveau-utils)"]
         T1["Dynamic Governor 2.0 (nouveau-dynclockd.py)"]
         T2["Management CLI & TUI (nouveau-ctrl & nouveau-tui)"]
         T3["3D Vision USB IR Emitter Daemon (nv3dvision-ir)"]
@@ -140,11 +140,16 @@ These components live above the kernel interface. They compile against user-spac
 
 ---
 
-## 4. Category 3: Companion User-Space Utilities Suite (`nouveau-tools` / `nouveau-dkms`)
+## 4. Category 3: Companion User-Space Utilities Suite (`nouveau-utils`)
 
-These tools reside in user space. They are packaged directly alongside the DKMS package, forming a complete out-of-the-box management suite:
+These tools reside in user space. They have been officially decoupled into a standalone repository ([Twilight0/nouveau-utils](https://github.com/Twilight0/nouveau-utils)) with independent releases and multi-distro packaging:
 
-### 1. Daemon & Power Management
+### 1. Codebase Separation & Packaging
+- [x] **Repository Decoupling**: Standalone git repository `Twilight0/nouveau-utils` with complete commit/tag history preserved via `git-filter-repo`.
+- [x] **Cross-Distribution Packaging**: Dedicated `Makefile`, Arch Linux `PKGBUILD` + `.SRCINFO`, Debian/Ubuntu (`packaging/debian/`), and Fedora/RHEL (`packaging/rpm/nouveau-utils.spec`).
+- [x] **Distribution Channels**: Published to the Arch User Repository ([`nouveau-utils` on AUR](https://aur.archlinux.org/packages/nouveau-utils)), GitHub Releases (`v2.2.1`), and the `aliveos-repo`.
+
+### 2. Daemon & Power Management
 - [x] **`nouveau-dynclockd.py` 2.0 (Dynamic Governor & Telemetry Provider)**:
   - Multi-tier scaling (`03` ↔ `07` for 2D, `0f`/`10` for 3D) with PowerMizer hold-down timers (`HOLD_0F_SECONDS=8`, `HOLD_07_SECONDS=5`).
   - 120 Hz display floor guard (`>= 07`) via `libdrm.so.2` CRTC interrogation.
@@ -212,6 +217,8 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 - [x] Sub-millisecond GPU load tracking via hardware interrupts (`/proc/interrupts` `nvkm`)
 - [x] 120 Hz display floor guard (`>= 07`) via `libdrm.so.2` CRTC interrogation
 - [x] Package rename & upgrade transition to `nouveau-dkms` (GitHub, AUR, AliveOS repository)
+- [x] Codebase Decoupling: Pure C kernel driver package separated from userspace utilities
+- [x] Cross-distribution packaging pipelines (`PKGBUILD`, `debian/`, `.spec`) & GitHub Actions matrix CI
 - [ ] Synthetic P3 state `0a` (`405/810/650 MHz @ 0.920 V`, `0x132004 = 0x10012702`)
 - [ ] Hardware parity optimization: Lossless Z-Cull & tile depth compression (`TAGRAM` / `PLTCG` `0x140000` / `PGRAPH`)
 - [ ] Fine-grained BLCG / SLCG hardware clock gating (`0x00020xxx`)
@@ -224,7 +231,10 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 - [ ] Mode A (Unified `VRAM + GART` oversubscription)
 - [ ] Mode B (`/dev/nvram0` `PCOPY` DMA block device)
 
-### Repository 2: `nouveau-tools` / Companion Suite (Packaged in `nouveau-dkms`)
+### Repository 2: `nouveau-utils` (Standalone Companion Suite)
+- [x] Codebase Decoupling: Standalone git repository `Twilight0/nouveau-utils` with complete git history preserved
+- [x] Cross-distribution release packaging (`.deb`, `.rpm`, `PKGBUILD`, `Makefile`, and GitHub Actions CI matrix)
+- [x] Arch User Repository (`nouveau-utils` on AUR) & `aliveos-repo` packages
 - [x] `nouveau-ctrl` CLI status, unprivileged snapshot query, and clock locking via `/run/nouveau/mode`
 - [x] `nouveau-tui` curses interface with thermal coloring, fan RPM, and live `SIGHUP` reload hotkey (`R`)
 - [x] `nouveau-dynclockd.py` 2.0 (Hysteresis hold timers, 120 Hz floor, zero-sudo mode coordination)
@@ -234,7 +244,6 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 - [ ] Real-time ASCII sparkline activity history
 - [ ] `nv3dvision-ir` USB emitter synchronization daemon (`0955:0007`)
 - [ ] `nouveau-extract-fw` PureVideo HD / MSENC firmware extraction script
-- [ ] Cross-distribution release packaging (`.deb`, `.rpm`, Gentoo, NixOS, Makefile)
 
 ### External Project: Mesa Enhancements (Downstream `aliveos-repo` Package / RFC MR)
 - [ ] Mesa `nv50_ir`: Dual-issue warp scheduling & superscalar execution [~10% compute win]

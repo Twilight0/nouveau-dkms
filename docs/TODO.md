@@ -58,6 +58,8 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ### 1. Eliminating Screen Flashes During Clock Changes (True Zero-Flash VBlank Memory Reclocking)
 *(Full hardware specification in [`RECLOCKING_NOTES.md` §10.4](RECLOCKING_NOTES.md#104-nv-kernelo_binary-the-rm-sequencer-objseq--seqscript--memx-bytecode-emitter-api--zero-flash-vblank-pipeline). 390-blob REA: `nv-kernel.o_binary` string-anchored functions `_nv010494rm` (`RmIsoHubMCLKSwitch`), `_nv012821rm` (`RMOnDemandVBlank`), `_nv012818rm` (`RMGlitchlessModeset`, 0xdb5 bytes), `_nv011282rm` (`RmNvsrFlickerControl`), `_nv019868rm` (`RMFermiMinGpmFifoDepth`); static objdump+reloc-xref route, Ghidra not required)*
+- [x] **Zero-Stutter Signed-`vpos` VBlank Memory Reclocking (`v2.2.0` / `v2.2.1`)**:
+  - Implemented in host-side `ramgf100.c` with signed `vpos` calculation (`gf100_ram_calc_vpos` / `gf100_ram_wait_vblank`), approach-zone micro-sleeps (`80–150 µs`), tight polling the leading edge of VBlank (`vpos == 1077 -> -46`), and host `0x001548` PHY commit latch completing in `470–535 µs` inside VBlank without visual stutter.
 - [ ] **Move `WAIT_VBLANK` Inside `memx_exec_custom.fuc` (`< 50 ns` Reaction Latency)**:
   - *(Note: Hardware testing showed Falcon v3 PRIVRING access to display raster registers `0x616340` causes MMIO aborts on GF106. Host-side signed-`vpos` sync in `ramgf100.c` resolved visual stutter completely in `v2.2.0` by landing the entire 477–535 µs reclock inside VBlank. In-Falcon polling remains an architectural research item for chips with PMU PRIVRING apertures).*
 - [ ] **Pre-`STOP_FB` Display `ISOHUB` Critical Watermark Spool-Up (`_nv031916rm` / `_nv031860rm`, `_nv010494rm`)**:
@@ -187,9 +189,14 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
   - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` against `linux-cachyos-lts`, `linux-cachyos`, Arch `linux`, and `linux-lts` headers, and runs `shellcheck` / `py_compile` on userspace scripts.
 - [x] **Package Rename / Transition (done: `nouveau-dkms`, was `nouveau-fermi-reclock-dkms`)**:
   - `PKGBUILD` carries `provides=('nouveau-fermi-reclock-dkms')`, `conflicts=('nouveau-fermi-reclock-dkms' 'nouveau-fermi-reclock-cachyos-lts-v2')`, `replaces=('nouveau-fermi-reclock-dkms')` so the old AUR package and prebuilt upgrade cleanly. Completed on AUR and AliveOS repository.
-- [ ] **Cross-Distribution Packaging Pipeline (`.github/workflows/release-packages.yml`)**:
-  1. **Arch Linux / AliveOS / CachyOS / Manjaro (`.pkg.tar.zst`)**: `PKGBUILD` + `.SRCINFO` + `pacman` hooks.
-  2. **Debian / Ubuntu / Linux Mint / Pop!_OS (`.deb`)**: `debian/` packaging with `dh-dkms`, `dpkg-buildpackage`, and `update-initramfs -u` hooks.
-  3. **Fedora / RHEL / Alma / Rocky / openSUSE (`.rpm`)**: `nouveau-reclocking-dkms.spec` with COPR & Open Build Service (`OBS`) automation and `dracut --force` hooks.
-  4. **Gentoo (`sys-kernel/nouveau-reclocking-dkms` ebuild)** & **NixOS (`flake.nix` kernelModulePackage + NixOS service module)**.
-  5. **Universal Distro-Agnostic `Makefile` (`sudo make dkms-install`)**: Fallback source installer for any Linux distribution.
+- [x] **Codebase Decoupling (`nouveau-dkms` & `nouveau-utils`)**:
+  - Decoupled monolithic repository into pure kernel driver (`nouveau-dkms`) and standalone userspace governor/CLI/TUI suite (`nouveau-utils`).
+  - History preserved cleanly via `git-filter-repo`.
+  - Independent versioning and releases starting at `v2.2.0` / `v2.2.1`.
+- [x] **Cross-Distribution Packaging & GitHub Actions CI Pipelines**:
+  1. **Arch Linux (`.pkg.tar.zst`)**: Standalone `PKGBUILD` + `.SRCINFO`, tested and published on AUR (`nouveau-dkms`, `nouveau-utils`) and `aliveos-repo`.
+  2. **Debian / Ubuntu (`.deb`)**: Standalone `packaging/debian/` and `build-deb.sh` producing clean architecture-independent `.deb` packages.
+  3. **Fedora / RHEL (`.rpm`)**: Standalone `.spec` files producing `.noarch.rpm` packages.
+  4. **Automated CI Matrix (`.github/workflows/package-and-release.yml`)**: Continuous multi-distro containerized packaging pipeline building and publishing release assets on every tag.
+- [ ] **Universal Distro-Agnostic `Makefile` (`sudo make dkms-install`)**: Fallback source installer for any Linux distribution.
+- [ ] **Gentoo (`sys-kernel/nouveau-dkms` ebuild)** & **NixOS (`flake.nix` kernelModulePackage + NixOS service module)**.
