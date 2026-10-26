@@ -1,4 +1,4 @@
-# nouveau-dkms (`v2.2.1`)
+# nouveau-dkms (`v2.2.2`)
 
 Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and 120 Hz eDP display support on Linux `6.18+`—serving as the unified out-of-tree reclocking driver for pre-`Nova` NVIDIA GPUs.
 
@@ -8,7 +8,11 @@ Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltag
 
 ---
 
-## Key Features (`v2.2.1`)
+## Key Features (`v2.2.2`)
+
+- **Fermi 256-Byte Render Target Alignment & Stable Recovery (`v2.2.2`)**:
+  - Enforces strict 256-byte (`0x100`) base alignment in `nouveau_bo.c` and `nouveau_gem.c` for Fermi+ color targets, eliminating PGRAPH `DATA_ERROR 00000004 [INVALID_VALUE]` on method `0x0804` (`NV9097_SET_COLOR_TARGET_B`) with Wayland/Mesa suballocated buffers.
+  - Ensures clean engine resets on client faults without freezing the compositor or desktop pipeline.
 
 - **Full Bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**:
   - Custom resident Falcon microcode executor (`memx_exec_custom.fuc`) running on the Fermi `PDAEMON` microcontroller (`0x10a000`) via sub-millisecond MMIO mailboxes (`SCRATCH2` / `SCRATCH3`).

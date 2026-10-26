@@ -1,3 +1,12 @@
+nouveau-dkms (2.2.2-1) unstable; urgency=medium
+
+  * Release v2.2.2: 256-byte render target base alignment & stable recovery.
+  * Enforce 256-byte hardware alignment in nouveau_bo.c and nouveau_gem.c for Fermi+ color targets.
+  * Eliminate PGRAPH DATA_ERROR 00000004 [INVALID_VALUE] on method 0x0804.
+  * Restore solid upstream engine reset for graceful client recovery.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Mon, 26 Oct 2026 18:20:00 +0200
+
 nouveau-dkms (2.2.1-1) unstable; urgency=medium
 
   * Release v2.2.1: Packaging and code separation.
