@@ -82,8 +82,7 @@ jobs:
           rpmdev-setuptree
           cp packaging/rpm/nouveau-dkms.spec ~/rpmbuild/SPECS/
           cp nouveau-source.tar.gz nouveau.patch dkms.conf nouveau.conf \
-             nouveau-dynclockd.conf nouveau-dynclockd.py nouveau-dynclockd.service \
-             nouveau-ctrl nouveau-tui apps.conf.sample ~/rpmbuild/SOURCES/
+             ~/rpmbuild/SOURCES/
 
       - name: Build RPM package
         run: |

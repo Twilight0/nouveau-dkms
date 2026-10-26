@@ -31,8 +31,8 @@ Version: ${VERSION}-1
 Architecture: ${ARCH}
 Maintainer: Twilight0 <twilight0@vivaldi.net>
 Installed-Size: ${INSTALLED_SIZE}
-Depends: dkms (>= 2.1.0.0), python3, libdrm2 | libdrm-common
-Recommends: linux-headers-generic | linux-headers-amd64 | linux-headers
+Depends: dkms (>= 2.1.0.0)
+Recommends: nouveau-utils, linux-headers-generic | linux-headers-amd64 | linux-headers
 Section: kernel
 Priority: optional
 Homepage: https://github.com/Twilight0/nouveau-dkms

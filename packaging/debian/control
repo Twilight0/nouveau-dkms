@@ -9,8 +9,8 @@ Rules-Requires-Root: no
 
 Package: nouveau-dkms
 Architecture: all
-Depends: ${misc:Depends}, dkms (>= 2.1.0.0), python3, libdrm2 | libdrm-common
-Recommends: linux-headers-generic | linux-headers-amd64 | linux-headers
+Depends: ${misc:Depends}, dkms (>= 2.1.0.0)
+Recommends: nouveau-utils, linux-headers-generic | linux-headers-amd64 | linux-headers
 Conflicts: nouveau-fermi-reclock-dkms
 Replaces: nouveau-fermi-reclock-dkms
 Description: Nouveau out-of-tree DRM module with dynamic Fermi reclocking (DKMS)

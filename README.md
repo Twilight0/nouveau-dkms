@@ -55,20 +55,20 @@ cd nouveau-dkms
 makepkg -si
 ```
 
-### Enable the Dynamic Clock Governor
-```bash
-sudo systemctl enable --now nouveau-dynclockd.service
-```
+### Companion Userspace Utilities (`nouveau-utils`)
+The userspace governor (`nouveau-dynclockd`), control CLI (`nouveau-ctrl`), and interactive dashboard (`nouveau-tui`) are maintained in the companion repository:
+👉 **[github.com/Twilight0/nouveau-utils](https://github.com/Twilight0/nouveau-utils)**
 
-### CLI & TUI Usage
 ```bash
-nouveau-ctrl status                  # Show live P-state, clocks, VRAM usage, temp, fan RPM, power source & PCIe link
-nouveau-ctrl watch                   # Continuous live telemetry monitor
-nouveau-ctrl set 0f                  # Manually select P0 (590/1180/900 MHz)
-nouveau-ctrl set 10                  # Manually select Overclock state (when NvFermiOC=true)
-nouveau-ctrl set auto                # Return control to nouveau-dynclockd
-nouveau-ctrl set_throttle_temp 78    # Set thermal throttle threshold (°C)
-nouveau-tui                          # Launch interactive curses dashboard
+# Enable the dynamic frequency governor daemon
+sudo systemctl enable --now nouveau-dynclockd.service
+
+# Query telemetry & manage clocks via CLI
+nouveau-ctrl status
+nouveau-ctrl set auto
+
+# Launch the interactive terminal dashboard
+nouveau-tui
 ```
 
 ---

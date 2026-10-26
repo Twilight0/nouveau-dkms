@@ -22,6 +22,7 @@ binary_driver/
 vbios_database/
 *.rom
 *.rom.xz
+!testing/gpu_vbios.rom
 tools/download-vbios-techpowerup.py
 tools/download-vbios-*.py
 nouveau_fermi_diag_report.md
