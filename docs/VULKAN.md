@@ -55,6 +55,28 @@ To understand why Mesa's new **NVK** driver supports Kepler (`GK104+`) before Fe
 ### Pathway A: Native Mesa Vulkan (`nvk-fermi` / `hasvk`-Style Extension to Mesa) — *The Gold Standard*
 A dedicated Fermi backend within Mesa's Nouveau Vulkan stack (either as a legacy tier of **NVK** or a `nvk-fermi` split analogous to Intel's `anv` vs. `hasvk`):
 
+```mermaid
+flowchart TD
+    subgraph App ["Vulkan Applications / Games"]
+        A1["DXVK 1.10.3 (DirectX 9/10/11)"]
+        A2["VKD3D / Native Vulkan 1.0 Apps"]
+        A3["Zink (OpenGL 4.6 on Vulkan)"]
+    end
+
+    subgraph Userspace ["Mesa Vulkan Driver (nvk-fermi)"]
+        B1["NVK Common Runtime (SyncObj, Timeline Semaphores, Pushbuffers)"]
+        B2["nir_lower_descriptors (Maps VkDescriptorSet -> 128 TIC / 32 TSC slots)"]
+        B3["Mesa NIR -> nv50_ir (TargetNVC0 compiler backend)"]
+    end
+
+    subgraph Kernel ["Kernel Driver (nouveau-dkms)"]
+        C1["nouveau.ko (Async PCOPY DMA, GEM memory, timeline fences)"]
+    end
+
+    App --> Userspace
+    Userspace --> Kernel
+```
+
 1. **Command Buffer & Engine Submission (`NVC0_3D` `0x9097` & `NVC0_COMPUTE` `0x90c0`)**:
    - Over 85% of the `NVC0_3D` rasterizer, depth/stencil, blend, viewport, vertex attribute, and MME macro registers are **identical** between Fermi (`0x9097`) and Kepler (`0xa097`).
 2. **Descriptor Lowering Pass (`nak_nir_lower_fermi_descriptors`)**:
