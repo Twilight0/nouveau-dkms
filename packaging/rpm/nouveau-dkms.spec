@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.2.2
+Version:        2.2.3
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -56,6 +56,11 @@ fi
 %config(noreplace) %{_sysconfdir}/modprobe.d/nouveau.conf
 
 %changelog
+* Tue Oct 27 2026 Twilight0 <twilight0@vivaldi.net> - 2.2.3-1
+- Release v2.2.3: Zero-tear VBlank sync leading edge guarantee.
+- Disallow mid-VBlank reclocking starts to prevent raster scan overrun into active picture.
+- Always synchronize reclocking to the true leading edge, ensuring complete execution inside blanking.
+
 * Mon Oct 26 2026 Twilight0 <twilight0@vivaldi.net> - 2.2.2-1
 - Release v2.2.2: 256-byte render target base alignment & stable recovery.
 - Enforce 256-byte hardware alignment in nouveau_bo.c and nouveau_gem.c for Fermi+ color targets.

@@ -1,4 +1,4 @@
-# nouveau-dkms (`v2.2.2`)
+# nouveau-dkms (`v2.2.3`)
 
 Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and 120 Hz eDP display support on Linux `6.18+`—serving as the unified out-of-tree reclocking driver for pre-`Nova` NVIDIA GPUs.
 
@@ -8,7 +8,11 @@ Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltag
 
 ---
 
-## Key Features (`v2.2.2`)
+## Key Features (`v2.2.3`)
+
+- **Zero-Tear VBlank Sync Leading Edge Guarantee (`v2.2.3`)**:
+  - Eliminates mid-VBlank reclock starts in `ramgf100.c`, strictly synchronizing DDR3 memory frequency switching to the pre-blanking approach zone and exact blanking leading edge.
+  - Guarantees the complete ~530 µs reclock cycle finishes entirely within the blanking interval on 120 Hz displays before active scanout begins.
 
 - **Fermi 256-Byte Render Target Alignment & Stable Recovery (`v2.2.2`)**:
   - Enforces strict 256-byte (`0x100`) base alignment in `nouveau_bo.c` and `nouveau_gem.c` for Fermi+ color targets, eliminating PGRAPH `DATA_ERROR 00000004 [INVALID_VALUE]` on method `0x0804` (`NV9097_SET_COLOR_TARGET_B`) with Wayland/Mesa suballocated buffers.

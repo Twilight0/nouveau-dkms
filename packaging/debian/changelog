@@ -1,3 +1,11 @@
+nouveau-dkms (2.2.3-1) unstable; urgency=medium
+
+  * Release v2.2.3: Zero-tear VBlank sync leading edge guarantee.
+  * Disallow mid-VBlank reclocking starts to prevent raster scan overrun into active picture.
+  * Always synchronize reclocking to the true leading edge (vpos approach zone), ensuring complete execution inside blanking.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Tue, 27 Oct 2026 16:00:00 +0200
+
 nouveau-dkms (2.2.2-1) unstable; urgency=medium
 
   * Release v2.2.2: 256-byte render target base alignment & stable recovery.
