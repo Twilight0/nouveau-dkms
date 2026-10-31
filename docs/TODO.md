@@ -277,8 +277,22 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
 | **Maxwell 2 & Pascal** (`NV120`–`NV138`) | `GM200`–`GP108` | GeForce GTX 900 & GTX 10-series | **HS RSA-Signed ACR/PMU** | Investigate extracting signed PMU/ACR images from official redistributables + unified governor and `fdinfo` telemetry. |
 
 ### Out-of-Tree Maintenance, Multi-Kernel CI & Cross-Distro Packaging Tasks
+- [ ] **Deconstruct Monolithic `nouveau.patch` into a Modular Patch Queue (`patches/000X-*.patch`)**:
+  - Replace the monolithic patch with a clean, Git-formatted patch stack in `patches/`:
+    - `0001-drm-nouveau-fermi-core-shader-pstates.patch` (`clk/base.c`, `clk/gf100.c`)
+    - `0002-drm-nouveau-fermi-resident-falcon-ddr3.patch` (`fexec_code.inc`, `ramfuc.h`, `ramgf100.c`)
+    - `0003-drm-nouveau-fermi-vblank-leading-edge.patch` (`ramgf100.c`)
+    - `0004-drm-nouveau-bo-enforce-256b-alignment.patch` (`nouveau_bo.c`, `nouveau_gem.c`)
+    - `0005-drm-nouveau-ttm-vram-accounting-debugfs.patch` (`nouveau_debugfs.c`)
+    - `0006-drm-nouveau-display-120hz-full-view.patch` (`dispnv50/disp.c`)
+  - **Rebase Isolation**: Over 90% of our codebase resides in Fermi-specific files (`ramgf100.c`, `gf100.c`). Upstream development focuses on modern GSP/Blackwell/Nova architectures, so isolating our changes into modular units ensures `0001`–`0005` will rebase cleanly across future kernel releases with zero merge conflicts.
 - [ ] **Centralized Multi-Kernel Compatibility Header (`nouveau_compat.h`)**:
-  - Consolidate `LINUX_VERSION_CODE` API wrappers (such as the `6.18.55` `drm_client_dev_suspend` shim landed in `v2.1.0` and upcoming `6.19+` DRM/TTM shifts) into a dedicated `nouveau_compat.h` header so a single codebase compiles cleanly across `6.12 LTS`, `6.18 LTS`, and mainline kernels.
+  - Consolidate all `LINUX_VERSION_CODE` API wrappers (such as the Linux `6.18.55` `drm_client_dev_suspend()` argument change and upcoming `6.19+` TTM/DRM-scheduler shifts) into a single `nouveau_compat.h` header.
+  - Allows the same unified driver tree to compile out-of-tree without modifications across `6.12 LTS`, `6.18 LTS`, and mainline kernels.
+- [ ] **Upstream Ingestion & Dual-Branch Tracking Workflow**:
+  - Maintain an `upstream-tracking` branch mirroring upstream Linux `drivers/gpu/drm/nouveau`.
+  - When upstream lands significant modern features (e.g. HDMI 2.1 for Blackwell, HDMI Deep Color, MST audio improvements), rebase the modular patch queue cleanly on top of the newer upstream snapshot.
+  - Automate rebuilding `nouveau-source.tar.gz` and tagging new driver versions when rebasing onto new major kernel releases.
 - [ ] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
   - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` against `linux-cachyos-lts`, `linux-cachyos`, Arch `linux`, and `linux-lts` headers, and runs `shellcheck` / `py_compile` on userspace scripts.
 - [x] **Package Rename / Transition (done: `nouveau-dkms`, was `nouveau-fermi-reclock-dkms`)**:
