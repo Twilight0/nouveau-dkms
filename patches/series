@@ -1,0 +1,8 @@
+# nouveau-dkms modular patch series
+0001-drm-nouveau-bo-enforce-256b-alignment.patch
+0002-drm-nouveau-ttm-vram-accounting-debugfs.patch
+0003-drm-nouveau-display-120hz-and-backlight.patch
+0004-drm-nouveau-compat-shims.patch
+0010-drm-nouveau-fermi-core-shader-pstates.patch
+0011-drm-nouveau-fermi-pdaemon-fuc3-bootstrap.patch
+0012-drm-nouveau-fermi-resident-falcon-ddr3-vblank.patch

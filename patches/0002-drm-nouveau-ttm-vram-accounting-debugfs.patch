@@ -1,0 +1,37 @@
+# Universal: Expose live TTM VRAM allocation telemetry in debugfs pstate
+diff -ruN a/nouveau_debugfs.c b/nouveau_debugfs.c
+--- a/nouveau_debugfs.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_debugfs.c	2026-11-02 19:09:37.395550782 +0200
+@@ -29,6 +29,8 @@
+  */
+ 
+ #include <linux/debugfs.h>
++#include <drm/ttm/ttm_device.h>
++#include <drm/ttm/ttm_resource.h>
+ #include <nvif/class.h>
+ #include <nvif/if0001.h>
+ #include "nouveau_debugfs.h"
+@@ -135,6 +137,23 @@
+ 		seq_putc(m, '\n');
+ 	}
+ 
++	/* Fermi VRAM telemetry (TODO: Live VRAM Allocation Tracking).
++	 * The gpuva debugfs node only lists UVMM clients, so it stays empty
++	 * on pre-UVMM chips like this GF106. Report exact TTM VRAM manager
++	 * usage here instead; userland parses the VRAM: line. */
++	{
++		struct nouveau_drm *nouveau = nouveau_drm(drm);
++		struct ttm_resource_manager *man =
++			ttm_manager_type(&nouveau->ttm.bdev, TTM_PL_VRAM);
++		if (man) {
++			u64 used = ttm_resource_manager_usage(man);
++			u64 total = nouveau->client.device.info.ram_user;
++			seq_printf(m, "VRAM: %llu MiB / %llu MiB used\n",
++				   (unsigned long long)(used >> 20),
++				   (unsigned long long)(total >> 20));
++		}
++	}
++
+ 	return 0;
+ }
+ 

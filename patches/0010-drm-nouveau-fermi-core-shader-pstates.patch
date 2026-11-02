@@ -1,0 +1,262 @@
+# Fermi (GF100-GF119): Core/shader reclocking, VID voltage fix, P-state 10 OC, and PCIe Gen1/Gen2 scaling
+diff -ruN a/nvkm/subdev/clk/base.c b/nvkm/subdev/clk/base.c
+--- a/nvkm/subdev/clk/base.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nvkm/subdev/clk/base.c	2026-11-02 19:09:37.396595367 +0200
+@@ -29,6 +29,7 @@
+ #include <subdev/bios/perf.h>
+ #include <subdev/bios/vpstate.h>
+ #include <subdev/fb.h>
++#include <subdev/pci.h>
+ #include <subdev/therm.h>
+ #include <subdev/volt.h>
+ 
+@@ -278,19 +279,37 @@
+ 	}
+ 
+ 	nvkm_debug(subdev, "setting performance state %d\n", pstatei);
+-	clk->pstate = pstatei;
++	if (fb && fb->ram)
++		clk->pstate = pstatei;
++	else
++		clk->pstate = -1;
+ 
+ 	nvkm_pcie_set_link(pci, pstate->pcie_speed, pstate->pcie_width);
+ 
+-	if (fb && fb->ram && fb->ram->func->calc) {
++	bool fermi_mem_reclock = nvkm_boolopt(subdev->device->cfgopt, "NvFermiMemReclock", false);
++	if (fb && fb->ram && fb->ram->func->calc && (subdev->device->card_type != NV_C0 || fermi_mem_reclock)) {
+ 		struct nvkm_ram *ram = fb->ram;
++		struct nvkm_volt *volt = subdev->device->volt;
+ 		int khz = pstate->base.domain[nv_clk_src_mem];
++
++		/* Raise voltage first if target pstate requires higher voltage */
++		if (volt) {
++			struct nvkm_cstate *cstate = !list_empty(&pstate->list) ?
++				nvkm_cstate_get(clk, pstate, NVKM_CLK_CSTATE_HIGHEST) : &pstate->base;
++			if (cstate)
++				nvkm_volt_set_id(volt, cstate->voltage, pstate->base.voltage, clk->temp, +1);
++		}
++
+ 		do {
+ 			ret = ram->func->calc(ram, khz);
+ 			if (ret == 0)
+ 				ret = ram->func->prog(ram);
+ 		} while (ret > 0);
+ 		ram->func->tidy(ram);
++		if (ret < 0) {
++			nvkm_error(subdev, "failed to reclock memory to %d kHz: %d\n", khz, ret);
++			return ret;
++		}
+ 	}
+ 
+ 	return nvkm_cstate_prog(clk, pstate, NVKM_CLK_CSTATE_HIGHEST);
+@@ -428,6 +447,12 @@
+ 	pstate->pcie_width = perfE.pcie_width;
+ 	cstate = &pstate->base;
+ 	cstate->voltage = perfE.voltage;
++	/* Class A (universal boards): trust VBIOS voltage first. GF106M
++	 * L702X VBIOS undervolts 0f (862.5 mV vs factory 1.030 V VID 0x01),
++	 * so raise to 0x67 only when VBIOS asks for less. Other boards
++	 * (e.g. GF119M 410M) keep their own factory VID untouched. */
++	if (pstate->pstate == 0x0f && perfE.voltage < 0x67)
++		cstate->voltage = 0x67;
+ 	cstate->domain[nv_clk_src_core] = perfE.core;
+ 	cstate->domain[nv_clk_src_shader] = perfE.shader;
+ 	cstate->domain[nv_clk_src_mem] = perfE.memory;
+@@ -451,6 +476,9 @@
+ 
+ 		cstate->domain[domain->name] = perfS.v40.freq;
+ 	}
++	/* shader = hot clock (2x core) if VBIOS omits it */
++	if (!cstate->domain[nv_clk_src_shader])
++		cstate->domain[nv_clk_src_shader] = cstate->domain[nv_clk_src_gpc];
+ 
+ 	data = nvbios_cstepEm(bios, pstate->pstate, &ver, &hdr, &cstepE);
+ 	if (data) {
+@@ -463,6 +491,35 @@
+ 	nvkm_pstate_info(clk, pstate);
+ 	list_add_tail(&pstate->head, &clk->states);
+ 	clk->state_nr++;
++
++	/* Local OC pstate (beyond BIOS max 0f) — gated by NvFermiOC.
++	 * Class A: scale relative to the board's own 0f (+~18%, same ratio
++	 * as GF106M 590->700) instead of absolute 1400 MHz, so low-clock
++	 * boards (e.g. GF119M 410M 573 MHz -> ~676 MHz) stay safe. */
++	if (pstate->pstate == 0x0f && nvkm_boolopt(clk->subdev.device->cfgopt, "NvFermiOC", false)) {
++		struct nvkm_pstate *oc = kzalloc(sizeof(*oc), GFP_KERNEL);
++		if (oc) {
++			u32 base_core, base_shader;
++			INIT_LIST_HEAD(&oc->list);
++			oc->pstate = 0x10;
++			oc->fanspeed = pstate->fanspeed;
++			oc->pcie_speed = pstate->pcie_speed;
++			oc->pcie_width = pstate->pcie_width;
++			oc->base = pstate->base;
++			base_core = pstate->base.domain[nv_clk_src_gpc];
++			base_shader = pstate->base.domain[nv_clk_src_shader];
++			if (!base_core)
++				base_core = pstate->base.domain[nv_clk_src_core];
++			if (!base_shader)
++				base_shader = base_core * 2;
++			oc->base.domain[nv_clk_src_gpc] = base_core + base_core / 5;
++			oc->base.domain[nv_clk_src_shader] = base_shader + base_shader / 5;
++			nvkm_pstate_info(clk, oc);
++			list_add_tail(&oc->head, &clk->states);
++			clk->state_nr++;
++		}
++	}
++
+ 	return 0;
+ }
+ 
+@@ -524,6 +581,7 @@
+ 	if (ret >= 0) {
+ 		if (ret -= 2, pwr) clk->ustate_ac = ret;
+ 		else		   clk->ustate_dc = ret;
++		clk->pstate = -1;
+ 		return nvkm_pstate_calc(clk, true);
+ 	}
+ 	return ret;
+@@ -555,6 +613,7 @@
+ 	if ( rel) clk->dstate += rel;
+ 	clk->dstate = min(clk->dstate, clk->state_nr - 1);
+ 	clk->dstate = max(clk->dstate, 0);
++	clk->pstate = -1;
+ 	return nvkm_pstate_calc(clk, true);
+ }
+ 
+@@ -590,6 +649,7 @@
+ nvkm_clk_init(struct nvkm_subdev *subdev)
+ {
+ 	struct nvkm_clk *clk = nvkm_clk(subdev);
++	struct nvkm_pci *pci = subdev->device->pci;
+ 	const struct nvkm_domain *clock = clk->domains;
+ 	int ret;
+ 
+@@ -612,11 +672,40 @@
+ 	if (clk->func->init)
+ 		return clk->func->init(clk);
+ 
++	/* Synchronize initial PCIe link speed to match boot performance state on cold boot */
++	if (pci && (int)pci->pcie.speed == -1) {
++		struct nvkm_pstate *pstate, *boot_pstate = NULL;
++		list_for_each_entry(pstate, &clk->states, head) {
++			u32 core = pstate->base.domain[nv_clk_src_core];
++			u32 mem = pstate->base.domain[nv_clk_src_mem];
++			u32 bcore = clk->bstate.base.domain[nv_clk_src_core];
++			u32 bmem = clk->bstate.base.domain[nv_clk_src_mem];
++			u32 cdiff = (core > bcore) ? (core - bcore) : (bcore - core);
++			u32 mdiff = (mem > bmem) ? (mem - bmem) : (bmem - mem);
++
++			if (cdiff < 15000 && mdiff < 15000) {
++				boot_pstate = pstate;
++				break;
++			}
++		}
++		if (!boot_pstate) {
++			list_for_each_entry(pstate, &clk->states, head) {
++				if (pstate->pstate == 0x07) {
++					boot_pstate = pstate;
++					break;
++				}
++			}
++		}
++		if (boot_pstate)
++			nvkm_pcie_set_link(pci, boot_pstate->pcie_speed, boot_pstate->pcie_width);
++	}
++
+ 	clk->astate = clk->state_nr - 1;
+ 	clk->dstate = 0;
+ 	clk->pstate = -1;
+ 	clk->temp = 90; /* reasonable default value */
+ 	nvkm_pstate_calc(clk, true);
++	clk->pstate = -1;
+ 	return 0;
+ }
+ 
+diff -ruN a/nvkm/subdev/clk/gf100.c b/nvkm/subdev/clk/gf100.c
+--- a/nvkm/subdev/clk/gf100.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nvkm/subdev/clk/gf100.c	2026-11-02 19:09:37.396905301 +0200
+@@ -91,6 +91,9 @@
+ 		return 0;
+ 	}
+ 
++	if (!M || !P)
++		return 0;
++
+ 	return sclk * N / M / P;
+ }
+ 
+@@ -179,13 +182,26 @@
+ 		return read_pll(clk, 0x132000);
+ 	case nv_clk_src_mdiv:
+ 		return read_div(clk, 0, 0x137300, 0x137310);
+-	case nv_clk_src_mem:
+-		if (nvkm_rd32(device, 0x1373f0) & 0x00000002)
+-			return nvkm_clk_read(&clk->base, nv_clk_src_mpll);
+-		return nvkm_clk_read(&clk->base, nv_clk_src_mdiv);
++	case nv_clk_src_mem: {
++		u32 f = 0;
++		if (nvkm_rd32(device, 0x1373f0) & 0x00000001) {
++			u32 coef = nvkm_rd32(device, 0x132004);
++			if (coef == 0x0002230b)
++				f = 900000;
++			else if (coef == 0x00071806)
++				f = 324000;
++			else
++				f = nvkm_clk_read(&clk->base, nv_clk_src_mpll);
++		}
++		if (!f)
++			f = nvkm_clk_read(&clk->base, nv_clk_src_mdiv);
++		return f;
++	}
+ 
+ 	case nv_clk_src_gpc:
+ 		return read_clk(clk, 0x00);
++	case nv_clk_src_shader:
++		return read_clk(clk, 0x00);
+ 	case nv_clk_src_rop:
+ 		return read_clk(clk, 0x01);
+ 	case nv_clk_src_hubk07:
+@@ -327,13 +343,16 @@
+ 	struct gf100_clk *clk = gf100_clk(base);
+ 	int ret;
+ 
++	/* NOTE: nv_clk_src_pmu (domain 0x0c) is intentionally excluded from
++	 * runtime clock recalculation. Reclocking the PDAEMON Falcon clock
++	 * while its resident microcode is actively executing causes an
++	 * asynchronous clock glitch on the Falcon pipeline, triggering an
++	 * instruction fetch abort / STOPPED fault that breaks bidirectional
++	 * memory reclocking fast-path handshakes.
++	 */
+ 	if ((ret = calc_clk(clk, cstate, 0x00, nv_clk_src_gpc)) ||
+ 	    (ret = calc_clk(clk, cstate, 0x01, nv_clk_src_rop)) ||
+-	    (ret = calc_clk(clk, cstate, 0x02, nv_clk_src_hubk07)) ||
+-	    (ret = calc_clk(clk, cstate, 0x07, nv_clk_src_hubk06)) ||
+-	    (ret = calc_clk(clk, cstate, 0x08, nv_clk_src_hubk01)) ||
+ 	    (ret = calc_clk(clk, cstate, 0x09, nv_clk_src_copy)) ||
+-	    (ret = calc_clk(clk, cstate, 0x0c, nv_clk_src_pmu)) ||
+ 	    (ret = calc_clk(clk, cstate, 0x0e, nv_clk_src_vdec)))
+ 		return ret;
+ 
+@@ -457,9 +476,11 @@
+ 		{ nv_clk_src_hubk06 , 0x00 },
+ 		{ nv_clk_src_hubk01 , 0x01 },
+ 		{ nv_clk_src_copy   , 0x02 },
+-		{ nv_clk_src_gpc    , 0x03, NVKM_CLK_DOM_FLAG_VPSTATE, "core", 2000 },
++		{ nv_clk_src_gpc    , 0x03, NVKM_CLK_DOM_FLAG_CORE |
++					    NVKM_CLK_DOM_FLAG_VPSTATE, "core", 2000 },
++		{ nv_clk_src_shader , 0xff, 0, "shader", 1000 },
+ 		{ nv_clk_src_rop    , 0x04 },
+-		{ nv_clk_src_mem    , 0x05, 0, "memory", 1000 },
++		{ nv_clk_src_mem    , 0x05, NVKM_CLK_DOM_FLAG_CORE, "memory", 1000 },
+ 		{ nv_clk_src_vdec   , 0x06 },
+ 		{ nv_clk_src_pmu    , 0x0a },
+ 		{ nv_clk_src_hubk07 , 0x0b },
+@@ -477,5 +498,5 @@
+ 		return -ENOMEM;
+ 	*pclk = &clk->base;
+ 
+-	return nvkm_clk_ctor(&gf100_clk, device, type, inst, false, &clk->base);
++	return nvkm_clk_ctor(&gf100_clk, device, type, inst, true, &clk->base);
+ }

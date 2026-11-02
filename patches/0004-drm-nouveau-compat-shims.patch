@@ -1,0 +1,197 @@
+# Universal: Multi-kernel compatibility layer (Linux 6.18 through 7.3)
+diff -ruN a/nouveau_compat.h b/nouveau_compat.h
+--- a/nouveau_compat.h	1970-01-01 00:00:00.000000000 +0000
++++ b/nouveau_compat.h	2026-11-02 19:30:00.000000000 +0200
+@@ -0,0 +1,75 @@
++/* SPDX-License-Identifier: MIT */
++#ifndef __NOUVEAU_COMPAT_H__
++#define __NOUVEAU_COMPAT_H__
++
++#include <linux/version.h>
++#include <linux/mm.h>
++#include <linux/memremap.h>
++#include <linux/dma-fence.h>
++
++#include <drm/drm_print.h>
++#include <drm/drm_drv.h>
++#include <drm/drm_client.h>
++#include <drm/drm_atomic.h>
++#include <drm/drm_atomic_uapi.h>
++#include <drm/drm_atomic_helper.h>
++#include <drm/drm_atomic_state_helper.h>
++#include <drm/drm_gpuvm.h>
++#include <drm/gpu_scheduler.h>
++#include <drm/ttm/ttm_bo.h>
++#include <drm/ttm/ttm_device.h>
++
++/*
++ * Linux 6.18.55+ / 6.19+ compatibility shims
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 18, 55)
++#define drm_client_dev_suspend(dev, ...) drm_client_dev_suspend(dev)
++#define drm_client_dev_resume(dev, ...)  drm_client_dev_resume(dev)
++#endif
++
++/*
++ * Linux 6.19+ compatibility shims
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
++#define ttm_bo_put(bo) ttm_bo_fini(bo)
++
++#define ttm_device_init(bdev, funcs, dev, mapping, vma_mgr, use_dma, use_dma32) \
++	ttm_device_init((bdev), (funcs), (dev), (mapping), (vma_mgr), \
++			((use_dma) ? TTM_ALLOCATION_POOL_USE_DMA_ALLOC : 0) | \
++			((use_dma32) ? TTM_ALLOCATION_POOL_USE_DMA32 : 0))
++
++#define zone_device_page_init(page) \
++	zone_device_page_init((page), page_pgmap(page), 0)
++#endif
++
++/*
++ * Linux 7.0+ compatibility shims
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 0, 0)
++#define drm_gpuvm_bo_obtain(gpuvm, obj) drm_gpuvm_bo_obtain_locked((gpuvm), (obj))
++#endif
++
++/*
++ * Linux 7.2+ compatibility shims
++ */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 2, 0)
++#define drm_atomic_state                 drm_atomic_commit
++#define drm_atomic_state_alloc           drm_atomic_commit_alloc
++#define drm_atomic_state_get             drm_atomic_commit_get
++#define drm_atomic_state_put             drm_atomic_commit_put
++#define drm_atomic_state_clear           drm_atomic_commit_clear
++#define drm_atomic_state_init            drm_atomic_commit_init
++#define drm_atomic_state_default_clear   drm_atomic_commit_default_clear
++#define drm_atomic_state_default_release drm_atomic_commit_default_release
++
++#define drm_sched_entity_fini(entity)    drm_sched_entity_kill(entity)
++#endif
++
++/*
++ * Linux 7.3+ compatibility shims
++ */
++#ifndef DRIVER_GEM_GPUVA
++#define DRIVER_GEM_GPUVA 0
++#endif
++
++#endif /* __NOUVEAU_COMPAT_H__ */
+diff -ruN a/nouveau_drv.h b/nouveau_drv.h
+--- a/nouveau_drv.h	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_drv.h	2026-11-02 19:30:50.873558253 +0200
+@@ -49,6 +49,7 @@
+ #include <drm/drm_device.h>
+ #include <drm/drm_drv.h>
+ #include <drm/drm_file.h>
++#include "nouveau_compat.h"
+ 
+ #include <drm/ttm/ttm_bo.h>
+ #include <drm/ttm/ttm_placement.h>
+diff -ruN a/nouveau_bo.h b/nouveau_bo.h
+--- a/nouveau_bo.h	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_bo.h	2026-11-02 19:32:00.162034113 +0200
+@@ -4,6 +4,7 @@
+ #include <drm/drm_gem.h>
+ #include <drm/ttm/ttm_bo.h>
+ #include <drm/ttm/ttm_placement.h>
++#include "nouveau_compat.h"
+ 
+ struct nouveau_channel;
+ struct nouveau_cli;
+diff -ruN a/dispnv04/crtc.c b/dispnv04/crtc.c
+--- a/dispnv04/crtc.c	2026-06-12 01:03:26.000000000 +0300
++++ b/dispnv04/crtc.c	2026-11-02 19:30:50.873910893 +0200
+@@ -923,6 +923,7 @@
+ 	return nv04_crtc_do_mode_set_base(crtc, old_fb, x, y, false);
+ }
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
+ static int
+ nv04_crtc_mode_set_base_atomic(struct drm_crtc *crtc,
+ 			       struct drm_framebuffer *fb,
+@@ -930,6 +931,7 @@
+ {
+ 	return nv04_crtc_do_mode_set_base(crtc, fb, x, y, true);
+ }
++#endif
+ 
+ static void nv04_cursor_upload(struct drm_device *dev, struct nouveau_bo *src,
+ 			       struct nouveau_bo *dst)
+@@ -1274,7 +1276,9 @@
+ 	.commit = nv_crtc_commit,
+ 	.mode_set = nv_crtc_mode_set,
+ 	.mode_set_base = nv04_crtc_mode_set_base,
++#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
+ 	.mode_set_base_atomic = nv04_crtc_mode_set_base_atomic,
++#endif
+ 	.disable = nv_crtc_disable,
+ 	.get_scanout_position = nouveau_display_scanoutpos,
+ };
+diff -ruN a/nouveau_dmem.c b/nouveau_dmem.c
+--- a/nouveau_dmem.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_dmem.c	2026-11-02 19:30:50.874183374 +0200
+@@ -219,8 +219,19 @@
+ 	return ret;
+ }
+ 
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
++static void nouveau_dmem_folio_free(struct folio *folio)
++{
++	nouveau_dmem_page_free(&folio->page);
++}
++#endif
++
+ static const struct dev_pagemap_ops nouveau_dmem_pagemap_ops = {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(6, 19, 0)
++	.folio_free		= nouveau_dmem_folio_free,
++#else
+ 	.page_free		= nouveau_dmem_page_free,
++#endif
+ 	.migrate_to_ram		= nouveau_dmem_migrate_to_ram,
+ };
+ 
+diff -ruN a/nouveau_drm.c b/nouveau_drm.c
+--- a/nouveau_drm.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_drm.c	2026-11-02 19:30:50.874433542 +0200
+@@ -156,6 +156,16 @@
+ static inline bool
+ nouveau_cli_work_ready(struct dma_fence *fence)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
++	unsigned long flags;
++
++	if (!dma_fence_is_signaled(fence))
++		return false;
++	dma_fence_lock_irqsave(fence, flags);
++	dma_fence_unlock_irqrestore(fence, flags);
++	dma_fence_put(fence);
++	return true;
++#else
+ 	bool ret = true;
+ 
+ 	spin_lock_irq(fence->lock);
+@@ -166,6 +176,7 @@
+ 	if (ret == true)
+ 		dma_fence_put(fence);
+ 	return ret;
++#endif
+ }
+ 
+ static void
+diff -ruN a/nouveau_fence.c b/nouveau_fence.c
+--- a/nouveau_fence.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_fence.c	2026-11-02 19:30:50.874609983 +0200
+@@ -41,7 +41,11 @@
+ static inline struct nouveau_fence_chan *
+ nouveau_fctx(struct nouveau_fence *fence)
+ {
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 1, 0)
++	return container_of(fence->base.extern_lock, struct nouveau_fence_chan, lock);
++#else
+ 	return container_of(fence->base.lock, struct nouveau_fence_chan, lock);
++#endif
+ }
+ 
+ static bool

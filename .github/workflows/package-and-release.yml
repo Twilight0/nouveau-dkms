@@ -122,9 +122,9 @@ jobs:
         run: |
           TAG="${{ github.ref_name }}"
           if [[ "$TAG" == "master" || "$TAG" == "main" ]]; then
-            TAG="v2.2.1"
+            TAG="v$(awk -F'= ' '/^VERSION/ {print $2}' Makefile)"
           fi
           if ! gh release view "$TAG" >/dev/null 2>&1; then
-            gh release create "$TAG" --title "$TAG" --notes "Release $TAG: Packaging and code separation"
+            gh release create "$TAG" --title "$TAG" --notes "Release $TAG: Multi-kernel DKMS package (Linux 6.18 – 7.3)"
           fi
           gh release upload "$TAG" release-assets/* --clobber

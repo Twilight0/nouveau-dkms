@@ -1,0 +1,191 @@
+name: Multi-Kernel Patch, DKMS Build & Cross-Distro Package CI
+
+on:
+  push:
+    branches:
+      - master
+      - main
+  pull_request:
+  schedule:
+    # Run weekly every Monday at 04:00 UTC to catch upstream/Arch kernel updates
+    - cron: '0 4 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  patch-portability:
+    name: Patch Queue & Upstream Matrix (v6.18 – v7.3)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify modular patch series (--fuzz=0) & upstream v6.18..v7.3 portability
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          bash testing/test-kernel-matrix.sh --check-series --upstream-matrix
+
+  dkms-compile-matrix:
+    name: Build nouveau.ko (${{ matrix.label }})
+    needs: patch-portability
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: "Arch linux-lts (6.18 LTS / GCC)"
+            flavor: "arch-lts"
+            pkgs: "linux-lts-headers kmod pahole bc python"
+          - label: "Arch linux (7.2+ Mainline / GCC)"
+            flavor: "arch-mainline"
+            pkgs: "linux-headers kmod pahole bc python"
+          - label: "CachyOS linux-cachyos (7.3+ / Clang LLVM=1)"
+            flavor: "cachyos-clang"
+            pkgs: "clang llvm lld kmod pahole bc python zstd curl"
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install toolchain and kernel headers
+        run: |
+          pacman -Syu --noconfirm ${{ matrix.pkgs }}
+          if [[ "${{ matrix.flavor }}" == "cachyos-clang" ]]; then
+            # Fetch latest linux-cachyos-headers from CachyOS / Chaotic-AUR mirror
+            MIRROR_URL="https://geo-mirror.chaotic.cx/chaotic-aur/x86_64"
+            HDR_PKG="$(curl -fsSL "${MIRROR_URL}/" | grep -oE 'linux-cachyos-headers-[0-9][^"]+\.pkg\.tar\.zst' | grep -v '\.sig$' | sort -V | tail -n1)"
+            echo "Downloading ${HDR_PKG}..."
+            curl -fsSL "${MIRROR_URL}/${HDR_PKG}" -o "/tmp/${HDR_PKG}"
+            pacman -U --noconfirm "/tmp/${HDR_PKG}"
+            rm -f "/tmp/${HDR_PKG}"
+          fi
+
+      - name: Compile nouveau.ko against target kernel headers
+        run: |
+          bash testing/test-kernel-matrix.sh --compile-installed
+
+  build-arch:
+    name: Package Arch / CachyOS (.pkg.tar.zst)
+    needs: dkms-compile-matrix
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare unprivileged builder
+        run: |
+          pacman -Syu --noconfirm git python
+          useradd -m -s /bin/bash builder
+          echo "builder ALL=(ALL) NOPASSWD: ALL" >> /etc/sudoers
+          chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      - name: Build Arch DKMS package with makepkg
+        run: |
+          su builder -c "makepkg -s --noconfirm"
+
+      - name: Upload Arch / CachyOS package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nouveau-dkms-arch-pkg
+          path: "*.pkg.tar.zst"
+
+  build-debian:
+    name: Package Debian / Ubuntu (.deb)
+    needs: dkms-compile-matrix
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Debian packaging dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential debhelper dkms dpkg-dev
+
+      - name: Build Debian / Ubuntu DKMS package
+        run: |
+          cp -r packaging/debian .
+          dpkg-buildpackage -us -uc -b
+          mkdir -p dist/deb
+          cp ../*.deb dist/deb/
+
+      - name: Upload Debian / Ubuntu package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nouveau-dkms-debian-deb
+          path: dist/deb/*.deb
+
+  build-rpm:
+    name: Package Fedora / RHEL / openSUSE (.rpm)
+    needs: dkms-compile-matrix
+    runs-on: ubuntu-latest
+    container:
+      image: fedora:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install RPM build dependencies
+        run: |
+          dnf install -y systemd-rpm-macros rpm-build rpmdevtools patch tar
+
+      - name: Build Fedora / RHEL DKMS package
+        run: |
+          rpmdev-setuptree
+          cp packaging/rpm/nouveau-dkms.spec ~/rpmbuild/SPECS/
+          cp nouveau-source.tar.gz nouveau.patch dkms.conf nouveau.conf \
+             ~/rpmbuild/SOURCES/
+          rpmbuild -ba ~/rpmbuild/SPECS/nouveau-dkms.spec
+          mkdir -p dist/rpm
+          cp ~/rpmbuild/RPMS/noarch/*.rpm dist/rpm/
+
+      - name: Upload Fedora / RHEL package artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: nouveau-dkms-fedora-rpm
+          path: dist/rpm/*.rpm
+
+  publish-test-packages:
+    name: Bundle Install-Ready Distro Packages
+    needs: [build-arch, build-debian, build-rpm]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all built distro packages
+        uses: actions/download-artifact@v4
+        with:
+          path: packages-bundle
+          merge-multiple: true
+
+      - name: Generate SHA256SUMS and CI Summary
+        run: |
+          cd packages-bundle
+          sha256sum * > SHA256SUMS.txt
+          {
+            echo "## 📦 Install-Ready \`nouveau-dkms\` Test Packages (Linux 6.18 – 7.3)"
+            echo ""
+            echo "All kernel matrix builds passed. Download the package for your distribution from the **Artifacts** section below:"
+            echo ""
+            echo "| Distribution Family | Artifact Name | Install Command |"
+            echo "| :--- | :--- | :--- |"
+            echo "| **Arch Linux / CachyOS / Manjaro** | \`nouveau-dkms-arch-pkg\` | \`sudo pacman -U nouveau-dkms-*.pkg.tar.zst\` |"
+            echo "| **Debian / Ubuntu / Mint / Pop!_OS** | \`nouveau-dkms-debian-deb\` | \`sudo apt install ./nouveau-dkms_*.deb\` |"
+            echo "| **Fedora / RHEL / openSUSE** | \`nouveau-dkms-fedora-rpm\` | \`sudo dnf install ./nouveau-dkms-*.noarch.rpm\` |"
+            echo "| **All Distros + SHA256SUMS** | \`nouveau-dkms-all-distros\` | Unified bundle |"
+            echo ""
+            echo "### Checksums (\`SHA256SUMS.txt\`)"
+            echo "\`\`\`text"
+            cat SHA256SUMS.txt
+            echo "\`\`\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload unified multi-distro package bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: nouveau-dkms-all-distros
+          path: packages-bundle/*

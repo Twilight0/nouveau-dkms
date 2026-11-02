@@ -1,0 +1,27 @@
+# Universal: Enforce 256-byte hardware buffer alignment for Fermi+ render targets
+diff -ruN a/nouveau_bo.c b/nouveau_bo.c
+--- a/nouveau_bo.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_bo.c	2026-11-02 19:09:37.395207443 +0200
+@@ -202,6 +202,8 @@
+ 	} else {
+ 		*size = roundup_64(*size, (1 << nvbo->page));
+ 		*align = max((1 <<  nvbo->page), *align);
++		if (device->info.family >= NV_DEVICE_INFO_V0_FERMI)
++			*align = max_t(int, *align, 256);
+ 	}
+ 
+ 	*size = roundup_64(*size, PAGE_SIZE);
+diff -ruN a/nouveau_gem.c b/nouveau_gem.c
+--- a/nouveau_gem.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_gem.c	2026-11-02 19:09:37.396213355 +0200
+@@ -349,6 +349,10 @@
+ 	 */
+ 	nouveau_cli_disable_uvmm_noinit(cli);
+ 
++	/* Enforce 256-byte hardware alignment for Fermi+ render target / color buffer compatibility */
++	if (cli->device.info.family >= NV_DEVICE_INFO_V0_FERMI)
++		req->align = max_t(uint32_t, req->align, 256);
++
+ 	ret = nouveau_gem_new(cli, req->info.size, req->align,
+ 			      req->info.domain, req->info.tile_mode,
+ 			      req->info.tile_flags, &nvbo);

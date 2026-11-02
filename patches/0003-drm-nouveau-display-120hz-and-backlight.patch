@@ -1,0 +1,49 @@
+# Universal: Preserve 120 Hz custom EDID modes, add vblank_continuous, and register nv_backlight
+diff -ruN a/dispnv50/disp.c b/dispnv50/disp.c
+--- a/dispnv50/disp.c	2026-06-12 01:03:26.000000000 +0300
++++ b/dispnv50/disp.c	2026-11-02 19:09:37.394457489 +0200
+@@ -228,6 +228,10 @@
+ static int nv50_dmac_vram_pushbuf = -1;
+ module_param_named(kms_vram_pushbuf, nv50_dmac_vram_pushbuf, int, 0400);
+ 
++MODULE_PARM_DESC(vblank_continuous, "Keep vblank IRQs continuously enabled for high-refresh displays (default: 0)");
++static int nouveau_vblank_continuous = 0;
++module_param_named(vblank_continuous, nouveau_vblank_continuous, int, 0400);
++
+ int
+ nv50_dmac_create(struct nouveau_drm *drm,
+ 		 const s32 *oclass, u8 head, void *data, u32 size, s64 syncbuf,
+@@ -353,8 +357,7 @@
+ 			 * refresh rate)
+ 			 */
+ 			if (mode->hdisplay == native_mode->hdisplay &&
+-			    mode->vdisplay == native_mode->vdisplay &&
+-			    mode->type & DRM_MODE_TYPE_DRIVER)
++			    mode->vdisplay == native_mode->vdisplay)
+ 				break;
+ 			mode = native_mode;
+ 			asyc->scaler.full = true;
+@@ -3012,7 +3015,7 @@
+ 	}
+ 
+ 	/* Disable vblank irqs aggressively for power-saving, safe on nv50+ */
+-	dev->vblank_disable_immediate = true;
++	dev->vblank_disable_immediate = !nouveau_vblank_continuous;
+ 
+ 	nv50_audio_component_init(drm);
+ 
+diff -ruN a/nouveau_backlight.c b/nouveau_backlight.c
+--- a/nouveau_backlight.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_backlight.c	2026-11-02 19:09:37.394913723 +0200
+@@ -344,10 +344,7 @@
+ 		goto fail_alloc;
+ 	}
+ 
+-	if (!nouveau_acpi_video_backlight_use_native()) {
+-		NV_INFO(drm, "Skipping nv_backlight registration\n");
+-		goto fail_alloc;
+-	}
++	/* Always register nv_backlight to allow daemon-based sync workarounds */
+ 
+ 	if (!nouveau_get_backlight_name(backlight_name, bl)) {
+ 		NV_ERROR(drm, "Failed to retrieve a unique name for the backlight interface\n");

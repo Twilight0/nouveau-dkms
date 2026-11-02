@@ -1,6 +1,6 @@
-# nouveau-dkms (`v2.2.3`)
+# nouveau-dkms (`v2.3.0`)
 
-Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and 120 Hz eDP display support on Linux `6.18+`—serving as the unified out-of-tree reclocking driver for pre-`Nova` NVIDIA GPUs.
+Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltage, PCIe Gen1/Gen2, and bidirectional DDR3 Memory Reclocking (`324 MHz` ↔ `900 MHz`)**, S3 suspend/resume self-healing, live TTM VRAM telemetry, zero-stutter VBlank synchronization, and multi-kernel support across Linux `6.18` through `7.3`—serving as the unified out-of-tree reclocking driver for pre-`Nova` NVIDIA GPUs.
 
 > [!WARNING]
 > **EXPERIMENTAL HARDWARE DRIVER**
@@ -8,7 +8,12 @@ Out-of-tree **Nouveau DKMS kernel module** unlocking full **Core, Shader, Voltag
 
 ---
 
-## Key Features (`v2.2.3`)
+## Key Features (`v2.3.0`)
+
+- **Multi-Kernel Support (Linux `6.18` through `7.3`) & Modular Patch Queue (`v2.3.0`)**:
+  - Centralized multi-kernel compatibility layer (`nouveau_compat.h`) providing version-gated shims for Linux DRM, TTM, MM, and DMA-fence API shifts across Linux `6.18 LTS`, `6.19`, `7.0`, `7.1`, `7.2` (Arch), and `7.3` (CachyOS Clang `LLVM=1`).
+  - Deconstructed monolithic patch into a modular numbered patch queue (`patches/series` and `patches/0001`..`0012`) isolating universal driver improvements from architecture-specific reclocking logic.
+  - Automated GitHub Actions multi-kernel CI matrix with downloadable test packages for Arch Linux (`.pkg.tar.zst`), Debian/Ubuntu (`.deb`), and Fedora/RHEL (`.rpm`).
 
 - **Zero-Tear VBlank Sync Leading Edge Guarantee (`v2.2.3`)**:
   - Eliminates mid-VBlank reclock starts in `ramgf100.c`, strictly synchronizing DDR3 memory frequency switching to the pre-blanking approach zone and exact blanking leading edge.

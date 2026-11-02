@@ -1,0 +1,647 @@
+# Fermi (GF100-GF119): PDAEMON Falcon v3 custom microcode bootstrap and SCRATCH mailbox execution
+diff -ruN a/nvkm/subdev/pmu/fuc/gf100.fuc3.h b/nvkm/subdev/pmu/fuc/gf100.fuc3.h
+--- a/nvkm/subdev/pmu/fuc/gf100.fuc3.h	2026-06-12 01:03:26.000000000 +0300
++++ b/nvkm/subdev/pmu/fuc/gf100.fuc3.h	2026-11-02 19:09:37.398361546 +0200
+@@ -1260,7 +1260,7 @@
+ 	0xb8525413,
+ 	0x0bf406e1,
+ /* 0x04b5: host_recv_wait */
+-	0xcc17f1aa,
++	0x1d0ef4aa,
+ 	0x0614b604,
+ 	0xf10011cf,
+ 	0xb604c827,
+@@ -1277,10 +1277,10 @@
+ 	0x07f10f24,
+ 	0x04b604c8,
+ 	0x0002d006,
+-	0x27f004bd,
+-	0x0007f040,
+-	0xd00604b6,
+-	0x04bd0002,
++	0x04bd04bd,
++	0x04bd04bd,
++	0x04bd04bd,
++	0x04bd04bd,
+ /* 0x050a: host_init */
+ 	0x17f100f8,
+ 	0x14b60080,
+diff -ruN a/nvkm/subdev/pmu/gt215.c b/nvkm/subdev/pmu/gt215.c
+--- a/nvkm/subdev/pmu/gt215.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nvkm/subdev/pmu/gt215.c	2026-11-02 19:09:37.398753007 +0200
+@@ -23,6 +23,7 @@
+  */
+ #include "priv.h"
+ #include "fuc/gt215.fuc3.h"
++#include "fuc/os.h"
+ 
+ #include <subdev/timer.h>
+ 
+@@ -35,8 +36,28 @@
+ 	u32 addr;
+ 
+ 	mutex_lock(&pmu->send.mutex);
++	/* Fermi DIAGNOSTIC: audit every host->PMU message. */
++	if (device->card_type == NV_C0)
++		nvkm_info(subdev, "pmu send: proc %08x msg %08x d0 %08x d1 %08x\n",
++			  process, message, data0, data1);
+ 	/* wait for a free slot in the fifo */
+ 	addr  = nvkm_rd32(device, 0x10a4a0);
++	if (device->card_type == NV_C0) {
++		/* Fermi: PUT reads are flaky (fault/garbage reads return
++		 * stale values).  Require two consecutive reads to agree
++		 * before trusting the slot. */
++		int i;
++
++		for (i = 0; i < 5; i++) {
++			u32 again = nvkm_rd32(device, 0x10a4a0);
++
++			if (again == addr)
++				break;
++			nvkm_info(subdev, "pmu PUT read unstable (%u vs %u)\n",
++				  addr, again);
++			addr = again;
++		}
++	}
+ 	if (nvkm_msec(device, 2000,
+ 		u32 tmp = nvkm_rd32(device, 0x10a4b0);
+ 		if (tmp != (addr ^ 8))
+@@ -56,27 +77,85 @@
+ 	}
+ 
+ 	/* acquire data segment access */
+-	do {
+-		nvkm_wr32(device, 0x10a580, 0x00000001);
+-	} while (nvkm_rd32(device, 0x10a580) != 0x00000001);
++	if (device->card_type < NV_C0) {
++		do {
++			nvkm_wr32(device, 0x10a580, 0x00000001);
++		} while (nvkm_rd32(device, 0x10a580) != 0x00000001);
++	}
+ 
+-	/* write the packet */
+-	nvkm_wr32(device, 0x10a1c0, 0x01000000 | (((addr & 0x07) << 4) +
+-				pmu->send.base));
+-	nvkm_wr32(device, 0x10a1c4, process);
+-	nvkm_wr32(device, 0x10a1c4, message);
+-	nvkm_wr32(device, 0x10a1c4, data0);
+-	nvkm_wr32(device, 0x10a1c4, data1);
+-	nvkm_wr32(device, 0x10a4a0, (addr + 1) & 0x0f);
++	/* write the packet; Fermi PDAEMON posting is flaky, so verify
++	 * the PUT bump landed and retry (bounded) with re-unlock.
++	 * Only rewrite when the pointer demonstrably did not advance,
++	 * to avoid tearing a slot the firmware is already reading. */
++	if (device->card_type == NV_C0) {
++		int tries;
++
++		for (tries = 0; tries < 3; tries++) {
++			u32 want = (addr + 1) & 0x0f, got;
++
++			nvkm_wr32(device, 0x10a1c0, 0x01000000 | (((addr & 0x07) << 4) +
++						pmu->send.base));
++			nvkm_wr32(device, 0x10a1c4, process);
++			nvkm_wr32(device, 0x10a1c4, message);
++			nvkm_wr32(device, 0x10a1c4, data0);
++			nvkm_wr32(device, 0x10a1c4, data1);
++			nvkm_wr32(device, 0x10a4a0, want);
++			got = nvkm_rd32(device, 0x10a4a0);
++			if (got == want) {
++				if (tries)
++					nvkm_info(subdev, "pmu PUT bump stuck after %d retries\n",
++						  tries);
++				break;
++			}
++			if (got != addr) {
++				nvkm_info(subdev, "pmu PUT bump ambiguous (want %u addr %u got %u), proceeding\n",
++					  want, addr, got);
++				break;
++			}
++			nvkm_info(subdev, "pmu PUT bump lost (want %u got %u), re-unlocking (try %d)\n",
++				  want, got, tries);
++			nvkm_mask(device, 0x10a048, 0x00000001, 0x00000001);
++			nvkm_mask(device, 0x10a090, 0x00010000, 0x00010000);
++			nvkm_wr32(device, 0x10a004, 0x00000008);
++			nvkm_wr32(device, 0x10a600, 0x00000000);
++			nvkm_wr32(device, 0x10a604, 0x00000000);
++			nvkm_wr32(device, 0x10a608, 0x00000004);
++			nvkm_wr32(device, 0x10a60c, 0x00000005);
++			nvkm_wr32(device, 0x10a610, 0x00000006);
++		}
++	} else {
++		nvkm_wr32(device, 0x10a1c0, 0x01000000 | (((addr & 0x07) << 4) +
++					pmu->send.base));
++		nvkm_wr32(device, 0x10a1c4, process);
++		nvkm_wr32(device, 0x10a1c4, message);
++		nvkm_wr32(device, 0x10a1c4, data0);
++		nvkm_wr32(device, 0x10a1c4, data1);
++		nvkm_wr32(device, 0x10a4a0, (addr + 1) & 0x0f);
++	}
+ 
+ 	/* release data segment access */
+-	nvkm_wr32(device, 0x10a580, 0x00000000);
++	if (device->card_type < NV_C0)
++		nvkm_wr32(device, 0x10a580, 0x00000000);
+ 
+ 	/* wait for reply, if requested */
+ 	if (reply) {
+-		wait_event(pmu->recv.wait, (pmu->recv.process == 0));
++		unsigned long deadline = jiffies + msecs_to_jiffies(100);
++		while (pmu->recv.process != 0 && time_before(jiffies, deadline)) {
++			gt215_pmu_recv(pmu);
++			if (pmu->recv.process == 0)
++				break;
++			usleep_range(50, 100);
++		}
++		if (pmu->recv.process != 0) {
++			nvkm_warn(subdev, "pmu reply timeout\n");
++			pmu->recv.process = 0;
++			mutex_unlock(&pmu->send.mutex);
++			return -ETIMEDOUT;
++		}
+ 		reply[0] = pmu->recv.data[0];
+ 		reply[1] = pmu->recv.data[1];
++		if (device->card_type == NV_C0)
++			nvkm_info(subdev, "pmu reply: %08x %08x\n", reply[0], reply[1]);
+ 	}
+ 
+ 	mutex_unlock(&pmu->send.mutex);
+@@ -96,31 +175,60 @@
+ 		return;
+ 
+ 	/* acquire data segment access */
+-	do {
+-		nvkm_wr32(device, 0x10a580, 0x00000002);
+-	} while (nvkm_rd32(device, 0x10a580) != 0x00000002);
++	if (device->card_type < NV_C0) {
++		do {
++			nvkm_wr32(device, 0x10a580, 0x00000002);
++		} while (nvkm_rd32(device, 0x10a580) != 0x00000002);
++	}
+ 
+ 	/* read the packet */
+-	nvkm_wr32(device, 0x10a1c0, 0x02000000 | (((addr & 0x07) << 4) +
++	nvkm_wr32(device, 0x10a1c0, 0x01000000 | (((addr & 0x07) << 4) +
+ 				pmu->recv.base));
+ 	process = nvkm_rd32(device, 0x10a1c4);
+ 	message = nvkm_rd32(device, 0x10a1c4);
+ 	data0   = nvkm_rd32(device, 0x10a1c4);
+ 	data1   = nvkm_rd32(device, 0x10a1c4);
+ 	nvkm_wr32(device, 0x10a4cc, (addr + 1) & 0x0f);
++	if (device->card_type == NV_C0) {
++		u32 want = (addr + 1) & 0x0f, got;
++
++		got = nvkm_rd32(device, 0x10a4cc);
++		if (got != want)
++			nvkm_info(subdev, "pmu RGET bump lost (want %u got %u)\n",
++				  want, got);
++	}
++
++	/* Fermi DIAGNOSTIC: log every consumed packet, not just mismatches. */
++	if (device->card_type == NV_C0)
++		nvkm_info(subdev, "pmu consumed: proc %08x msg %08x d0 %08x d1 %08x (slot %u)\n",
++			  process, message, data0, data1, addr & 0x0f);
+ 
+ 	/* release data segment access */
+-	nvkm_wr32(device, 0x10a580, 0x00000000);
++	if (device->card_type < NV_C0)
++		nvkm_wr32(device, 0x10a580, 0x00000000);
+ 
+ 	/* wake process if it's waiting on a synchronous reply */
+ 	if (pmu->recv.process) {
+ 		if (process == pmu->recv.process &&
+ 		    message == pmu->recv.message) {
+-			pmu->recv.data[0] = data0;
+-			pmu->recv.data[1] = data1;
+-			pmu->recv.process = 0;
+-			wake_up(&pmu->recv.wait);
+-			return;
++			/* Fermi: only accept INFO replies with plausible
++			 * payload (script area base nonzero and small).
++			 * Stale/VBIOS slots (all-MEMX) and latch echoes of
++			 * our own packet (base zero) fail this and are
++			 * drained as parasites without completing the wait. */
++			if (device->card_type == NV_C0 &&
++			    message == MEMX_MSG_INFO &&
++			    (data0 == 0 || data0 > 0x00001000 ||
++			     data1 > 0x00001000)) {
++				nvkm_info(subdev, "pmu parasite reply ignored: %08x %08x\n",
++					  data0, data1);
++			} else {
++				pmu->recv.data[0] = data0;
++				pmu->recv.data[1] = data1;
++				pmu->recv.process = 0;
++				wake_up(&pmu->recv.wait);
++				return;
++			}
+ 		}
+ 	}
+ 
+@@ -202,10 +310,35 @@
+ {
+ 	struct nvkm_device *device = pmu->subdev.device;
+ 	int i;
++	u32 chan_pre = 0, chan_post = 0, chan_next = 0;
++
++	/* Fermi: save the live Falcon channel before reset.  The PDAEMON
++	 * ctxsw engine needs a valid loaded channel for the Falcon core
++	 * itself to reach its queue pointers; without one, the first
++	 * host->PMU message wakes the firmware and its PUT poll faults
++	 * Falcon-side, halting it.  The VBIOS channel descriptor live at
++	 * this point is valid by construction, so it is reloaded after
++	 * reset (see below).  Reads may fault pre-reset (I/O still gated)
++	 * and simply yield zero, which disables the reload gracefully. */
++	if (device->card_type == NV_C0) {
++		chan_pre = nvkm_rd32(device, 0x10a050);
++		chan_next = nvkm_rd32(device, 0x10a054);
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON live channel: CUR %08x NEXT %08x\n",
++			  chan_pre, chan_next);
++	}
+ 
+ 	/* Inhibit interrupts, and wait for idle. */
+ 	if (pmu->func->enabled(pmu)) {
+ 		nvkm_wr32(device, 0x10a014, 0x0000ffff);
++		/* Fermi: the proprietary driver pauses the Falcon
++		 * (ENG_CONTROL.PAUSE_TRIGGER) before pulling reset. */
++		if (device->card_type == NV_C0) {
++			nvkm_wr32(device, 0x10a0a4, 0x00000002);
++			nvkm_msec(device, 2000,
++				if (nvkm_rd32(device, 0x10a0a4) & 0x00000200)
++					break;
++			);
++		}
+ 		nvkm_msec(device, 2000,
+ 			if (!nvkm_rd32(device, 0x10a04c))
+ 				break;
+@@ -220,11 +353,215 @@
+ 			break;
+ 	);
+ 
++	/* Fermi: after a Falcon reset the PDAEMON I/O block (queue pointers
++	 * 0x10a4a0, GPIO/FB_PAUSE 0x10a7xx, MEMIF ports 0x10a6xx) is not
++	 * reachable from the host and every access PRIVRING-faults.  The
++	 * proprietary driver unlocks it right after reset with interrupt
++	 * routing, ACCESS_EN.CHANNEL_SWITCH, UNK090 bit16 and MEMIF port
++	 * mapping (captured by mmiotrace on GF106).
++	 *
++	 * The blob additionally performs a CHANNEL_TRIGGER.LOAD, which is
++	 * load-bearing for the *Falcon core* side: without a valid loaded
++	 * channel the firmware faults on its first queue-pointer poll and
++	 * halts.  Its captured CHANNEL_SETUP value must NOT be replayed,
++	 * though: it points at a sysram DMA allocation valid only for the
++	 * captured boot (garbage descriptor, UC_STATUS never completes,
++	 * DMA to random system memory).  Instead the live VBIOS channel
++	 * saved above is reloaded; it is valid by construction on this
++	 * boot.  If no valid channel could be saved, the reload is
++	 * skipped (previous behavior).
++	 */
++	if (device->card_type == NV_C0) {
++		u32 chan_eff, stat;
++
++		nvkm_wr32(device, 0x10a014, 0x0000ffff);
++		nvkm_wr32(device, 0x10a01c, 0xff81ff52);
++		nvkm_wr32(device, 0x10a010, 0x000000f3);
++
++		nvkm_mask(device, 0x10a048, 0x00000001, 0x00000001);
++		nvkm_mask(device, 0x10a090, 0x00010000, 0x00010000);
++		nvkm_debug(&pmu->subdev, "Fermi PDAEMON I/O block enabled\n");
++		nvkm_wr32(device, 0x10a004, 0x00000008);
++		nvkm_wr32(device, 0x10a600, 0x00000000);
++		nvkm_wr32(device, 0x10a604, 0x00000000);
++		nvkm_wr32(device, 0x10a608, 0x00000004);
++		nvkm_wr32(device, 0x10a60c, 0x00000005);
++		nvkm_wr32(device, 0x10a610, 0x00000006);
++
++		/* Reload the saved live channel (prefer the pre-reset
++		 * reading; fall back to the post-reset register, which the
++		 * reset may have retained).  Non-fatal either way. */
++		chan_post = nvkm_rd32(device, 0x10a050);
++		if (chan_pre & 0x40000000)
++			chan_eff = chan_pre;
++		else if (chan_post & 0x40000000)
++			chan_eff = chan_post;
++		else
++			chan_eff = 0;
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON channel: pre %08x post %08x using %08x\n",
++			  chan_pre, chan_post, chan_eff);
++		if (chan_eff) {
++			nvkm_wr32(device, 0x10a47c, chan_eff);
++			nvkm_wr32(device, 0x10a058, 0x00000002);
++			stat = 0;
++			if (nvkm_msec(device, 2000,
++				stat = nvkm_rd32(device, 0x10a128);
++				if ((nvkm_rd32(device, 0x10a050) == chan_eff) &&
++				    (stat & 0x00000002))
++					break;
++			) < 0)
++				nvkm_warn(&pmu->subdev,
++					  "Fermi PDAEMON channel reload did not complete (UC_STATUS %08x CUR %08x)\n",
++					  stat, nvkm_rd32(device, 0x10a050));
++			else
++				nvkm_info(&pmu->subdev,
++					  "Fermi PDAEMON channel reloaded (UC_STATUS %08x)\n",
++					  stat);
++			nvkm_wr32(device, 0x10a004, 0x00000008);
++		}
++	}
++
++	/* Fermi: PDAEMON I/O is racy right after reset (writes silently
++	 * lost, no fault logged).  Probe it open with a PUT
++	 * write/readback loop before uploading anything precious;
++	 * without this the image can miss true DMEM while VBIOS remnants
++	 * persist.  Bounded; firmware is halted (not polling PUT), and
++	 * the probe value is restored to empty afterwards. */
++	if (device->card_type == NV_C0) {
++		unsigned long deadline = jiffies + msecs_to_jiffies(5000);
++		int open = 0;
++
++		while (time_before(jiffies, deadline)) {
++			nvkm_wr32(device, 0x10a4a0, 0x0000000a);
++			if (nvkm_rd32(device, 0x10a4a0) == 0x0000000a) {
++				open = 1;
++				break;
++			}
++			usleep_range(1000, 2000);
++		}
++		nvkm_wr32(device, 0x10a4a0, 0x00000000);
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON I/O %s before upload\n",
++			  open ? "open" : "never opened, proceeding anyway");
++	}
++
+ 	/* upload data segment */
+ 	nvkm_wr32(device, 0x10a1c0, 0x01000000);
+ 	for (i = 0; i < pmu->func->data.size / 4; i++)
+ 		nvkm_wr32(device, 0x10a1c4, pmu->func->data.data[i]);
+ 
++	/* Fermi DIAGNOSTIC: PDAEMON I/O is flaky (silent drops), so verify
++	 * every data word with explicit per-word indexing (robust against
++	 * any auto-increment step) and rewrite gaps, bounded.  Then log
++	 * the true queue slots via seg2 raw reads. */
++	if (device->card_type == NV_C0) {
++		int round, bad = 0;
++
++		for (round = 0; round < 3; round++) {
++			int shown = 0;
++
++			bad = 0;
++			for (i = 0; i < pmu->func->data.size / 4; i++) {
++				u32 w;
++
++				nvkm_wr32(device, 0x10a1c0, 0x01000000 + 4 * i);
++				w = nvkm_rd32(device, 0x10a1c4);
++				if (w != pmu->func->data.data[i]) {
++					if (round < 2) {
++						nvkm_wr32(device, 0x10a1c0,
++							  0x01000000 + 4 * i);
++						nvkm_wr32(device, 0x10a1c4,
++							  pmu->func->data.data[i]);
++					}
++					if (shown < 4)
++						nvkm_info(&pmu->subdev, "Fermi PDAEMON data mismatch at %03x: got %08x want %08x\n",
++							  i, w, pmu->func->data.data[i]);
++					shown++;
++					bad++;
++				}
++			}
++			nvkm_info(&pmu->subdev, "Fermi PDAEMON data verify round %d: %d mismatches\n",
++				  round, bad);
++			if (!bad)
++				break;
++		}
++		/* True sweep: seg2 was never written through, so these
++		 * reads have no latch ambiguity (unlike seg1).  64 words
++		 * over 0x270-0x36f (both FIFO areas): zeros throughout
++		 * means the upload landed and VBIOS is wiped; M/pattern
++		 * content beyond slot 0 means the upload faded mid-stream
++		 * (first words land, later ones silently dropped). */
++		{
++			int j, nonzero = 0;
++			u32 fa[4] = { 0, 0, 0, 0 }, fv[4] = { 0, 0, 0, 0 };
++
++			for (j = 0; j < 64; j++) {
++				u32 w;
++
++				nvkm_wr32(device, 0x10a1c0, 0x02000270 + 4 * j);
++				w = nvkm_rd32(device, 0x10a1c4);
++				if (w) {
++					if (nonzero < 4) {
++						fa[nonzero] = 0x270 + 4 * j;
++						fv[nonzero] = w;
++					}
++					nonzero++;
++				}
++			}
++			nvkm_info(&pmu->subdev, "Fermi PDAEMON true sweep 270-36f: %d/64 nonzero (first %05x=%08x %05x=%08x %05x=%08x %05x=%08x)\n",
++				  nonzero, fa[0], fv[0], fa[1], fv[1],
++				  fa[2], fv[2], fa[3], fv[3]);
++		}
++
++		/* Blind second pass over the data image (see above): if the
++		 * upload missed true DMEM anywhere in range, this lands it;
++		 * if it landed, idempotent no-op.  Fire-and-forget by design
++		 * (no readback theater). */
++		nvkm_wr32(device, 0x10a1c0, 0x01000000);
++		for (i = 0; i < pmu->func->data.size / 4; i++)
++			nvkm_wr32(device, 0x10a1c4, pmu->func->data.data[i]);
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON image rewrite done\n");
++	}
++
++	/* Fermi: zero the host-visible queue areas unconditionally
++	 * (fifo 0x270-0x2ef, rfifo 0x2f0-0x36f).  Idempotent if the
++	 * upload landed (image zeros there anyway); clears VBIOS-stale
++	 * slots if it missed them.  Firmware is not running yet, so no
++	 * race. */
++	if (device->card_type == NV_C0) {
++		for (i = 0x270 / 4; i < 0x370 / 4; i++) {
++			nvkm_wr32(device, 0x10a1c0, 0x01000000 + 4 * i);
++			nvkm_wr32(device, 0x10a1c4, 0x00000000);
++		}
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON queue areas zeroed\n");
++	}
++
++	/* Fermi: zero the MEMX/HOST process queue state too (qput/qget +
++	 * private queue data).  A VBIOS-full foreign queue makes send_proc
++	 * drop silently by design (no fault, no halt) while GET still
++	 * bumps -- exactly the observed signature.  The id/init/recv words
++	 * are deliberately preserved.  Layout from gf100.fuc3.h (structs
++	 * HOST@0x60, MEMX@0xb8, stride 0x58; qput+0x10, qget+0x14, queue
++	 * data +0x18..+0x58).  Same idempotence/no-race argument. */
++	if (device->card_type == NV_C0) {
++		static const u32 ranges[][2] = {
++			{ 0x070, 0x078 }, /* HOST qput/qget */
++			{ 0x078, 0x0b8 }, /* HOST queue data */
++			{ 0x0c8, 0x0d0 }, /* MEMX qput/qget */
++			{ 0x0d0, 0x110 }, /* MEMX queue data */
++		};
++		int r;
++
++		for (r = 0; r < 4; r++) {
++			u32 a;
++
++			for (a = ranges[r][0]; a < ranges[r][1]; a += 4) {
++				nvkm_wr32(device, 0x10a1c0, 0x01000000 + a);
++				nvkm_wr32(device, 0x10a1c4, 0x00000000);
++			}
++		}
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON proc queues zeroed\n");
++	}
++
+ 	/* upload code segment */
+ 	nvkm_wr32(device, 0x10a180, 0x01000000);
+ 	for (i = 0; i < pmu->func->code.size / 4; i++) {
+@@ -256,7 +593,128 @@
+ 	pmu->recv.base = nvkm_rd32(device, 0x10a4dc) & 0x0000ffff;
+ 	pmu->recv.size = nvkm_rd32(device, 0x10a4dc) >> 16;
+ 
++	/* Fermi: a reset does not clear the queue pointers, so a stale
++	 * VBIOS-era RPUT makes the first send consume phantom slots.
++	 * The firmware just booted with empty queues, so drop them
++	 * explicitly (host writes to these registers are fine). */
++	if (device->card_type == NV_C0) {
++		u32 put, get, rput, rget;
++
++		nvkm_wr32(device, 0x10a4a0, 0x00000000);
++		nvkm_wr32(device, 0x10a4b0, 0x00000000);
++		nvkm_wr32(device, 0x10a4c8, 0x00000000);
++		nvkm_wr32(device, 0x10a4cc, 0x00000000);
++		put = nvkm_rd32(device, 0x10a4a0);
++		get = nvkm_rd32(device, 0x10a4b0);
++		rput = nvkm_rd32(device, 0x10a4c8);
++		rget = nvkm_rd32(device, 0x10a4cc);
++		if (put | get | rput | rget) {
++			nvkm_wr32(device, 0x10a4a0, 0x00000000);
++			nvkm_wr32(device, 0x10a4b0, 0x00000000);
++			nvkm_wr32(device, 0x10a4c8, 0x00000000);
++			nvkm_wr32(device, 0x10a4cc, 0x00000000);
++		}
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON queue pointers cleared (now %08x %08x %08x %08x)\n",
++			  nvkm_rd32(device, 0x10a4a0), nvkm_rd32(device, 0x10a4b0),
++			  nvkm_rd32(device, 0x10a4c8), nvkm_rd32(device, 0x10a4cc));
++	}
++
+ 	nvkm_wr32(device, 0x10a010, 0x000000e0);
++
++	/* Fermi DIAGNOSTIC (experimental, remove after root-causing).
++	 * D1: DATA-window alignment check.  Write magic to unused send
++	 * slot 7 via the seg1 window, read it back via the seg2 window
++	 * (raw DMEM reads, as the blob uses them).  If seg1 offsets were
++	 * word (not byte) offsets, every packet/script upload would miss
++	 * the firmware's queue area.  Slot 7 is zeroed afterwards. */
++	if (device->card_type == NV_C0) {
++		static const u32 magic[4] = { 0xdeadbeef, 0xcafef00d,
++					      0x8badf00d, 0xfeedface };
++		u32 slot7 = ((7 << 4) + (pmu->send.base & 0x0000ffff)) & 0x00ffffff;
++		u32 rb[4], match = 1;
++		int j;
++
++		nvkm_wr32(device, 0x10a1c0, 0x01000000 | slot7);
++		for (j = 0; j < 4; j++)
++			nvkm_wr32(device, 0x10a1c4, magic[j]);
++		nvkm_wr32(device, 0x10a1c0, 0x02000000 | slot7);
++		for (j = 0; j < 4; j++) {
++			rb[j] = nvkm_rd32(device, 0x10a1c4);
++			if (rb[j] != magic[j])
++				match = 0;
++		}
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON window check: wrote %08x %08x %08x %08x read %08x %08x %08x %08x (%s)\n",
++			  magic[0], magic[1], magic[2], magic[3],
++			  rb[0], rb[1], rb[2], rb[3],
++			  match ? "MATCH" : "DIFFER");
++		nvkm_wr32(device, 0x10a1c0, 0x01000000 | slot7);
++		for (j = 0; j < 4; j++)
++			nvkm_wr32(device, 0x10a1c4, 0x00000000);
++	}
++
++	/* Fermi DIAGNOSTIC: pristine INFO self-test with interrupt
++	 * accounting.  Freeze the watchdog so DSCRATCH(0) counts only
++	 * our PUT-bump interrupt; verify frozen-ness first (two reads).
++	 * Then send INFO up to 3 times (covers a full watchdog period
++	 * even if the freeze failed).  intr-delta >= 1 proves the bump
++	 * reached the Falcon; loops-delta proves it ran the idle loop;
++	 * both zero with a frozen counter proves the bump was lost in
++	 * I/O gating.  Watchdog re-enabled afterwards. */
++	if (device->card_type == NV_C0) {
++		u32 reply[2] = { 0, 0 };
++		u32 d0a, d1a, d0b, d1b, d0c, d1c;
++		int ret = -ETIMEDOUT, k;
++
++		nvkm_wr32(device, 0x10a038, 0x00000000);
++		d0a = nvkm_rd32(device, 0x10a5d0);
++		d1a = nvkm_rd32(device, 0x10a5d4);
++		msleep(100);
++		d0b = nvkm_rd32(device, 0x10a5d0);
++		d1b = nvkm_rd32(device, 0x10a5d4);
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON watchdog %s (intr %u->%u loops %u->%u in 100ms)\n",
++			  (d0a == d0b && d1a == d1b) ? "frozen" : "still ticking",
++			  d0a, d0b, d1a, d1b);
++		/* Fermi: keepalive pings to keep the looper hot.  The idle
++		 * loop sleeps through messages if nothing keeps p2 set;
++		 * each TEST ping (fire-and-forget, true no-op handler
++		 * modulo a DSCRATCH bump) is another wake chance plus a
++		 * longer awake window for the INFO that follows. */
++		for (k = 0; k < 5; k++) {
++			nvkm_pmu_send(pmu, NULL, PROC_TEST, 0, 0, 0);
++			usleep_range(15000, 25000);
++		}
++		for (k = 0; k < 3; k++) {
++			ret = nvkm_pmu_send(pmu, reply, PROC_MEMX,
++					    MEMX_MSG_INFO, MEMX_INFO_DATA, 0);
++			if (!ret)
++				break;
++		}
++		d0c = nvkm_rd32(device, 0x10a5d0);
++		d1c = nvkm_rd32(device, 0x10a5d4);
++		nvkm_wr32(device, 0x10a038, 0x00000001);
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON INFO self-test: ret %d reply %08x %08x (intr +%u loops +%u over 3 sends)\n",
++			  ret, reply[0], reply[1], d0c - d0b, d1c - d1b);
++	}
++
++	/* Fermi DIAGNOSTIC: TEST ping to discriminate looper-dead from
++	 * INFO-specific failure.  test_recv bumps DSCRATCH(2) (observable
++	 * via the trustworthy control path) and otherwise returns
++	 * immediately.  Fire-and-forget, then a generous window, then
++	 * compare: advanced means the looper dequeued, dispatched and ran
++	 * handler code (so INFO's failure is INFO-specific); static means
++	 * nothing message-driven can ever work (custom executor, which
++	 * needs no looper, becomes mandatory). */
++	if (device->card_type == NV_C0) {
++		u32 t0, t1;
++
++		t0 = nvkm_rd32(device, 0x10a5d4);
++		nvkm_pmu_send(pmu, NULL, PROC_TEST, 0, 0, 0);
++		msleep(200);
++		t1 = nvkm_rd32(device, 0x10a5d4);
++		nvkm_info(&pmu->subdev, "Fermi PDAEMON TEST ping: DSCRATCH2 %08x->%08x (%s)\n",
++			  t0, t1, t1 != t0 ? "PROCESSED" : "ignored");
++	}
++
+ 	return 0;
+ }
+ 
+diff -ruN a/nvkm/subdev/pmu/memx.c b/nvkm/subdev/pmu/memx.c
+--- a/nvkm/subdev/pmu/memx.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nvkm/subdev/pmu/memx.c	2026-11-02 19:09:37.399172035 +0200
+@@ -61,9 +61,11 @@
+ 	memx->size = reply[1];
+ 
+ 	/* acquire data segment access */
+-	do {
+-		nvkm_wr32(device, 0x10a580, 0x00000003);
+-	} while (nvkm_rd32(device, 0x10a580) != 0x00000003);
++	if (device->card_type < NV_C0) {
++		do {
++			nvkm_wr32(device, 0x10a580, 0x00000003);
++		} while (nvkm_rd32(device, 0x10a580) != 0x00000003);
++	}
+ 	nvkm_wr32(device, 0x10a1c0, 0x01000000 | memx->base);
+ 	return 0;
+ }
+@@ -82,7 +84,8 @@
+ 
+ 	/* release data segment access */
+ 	finish = nvkm_rd32(device, 0x10a1c0) & 0x00ffffff;
+-	nvkm_wr32(device, 0x10a580, 0x00000000);
++	if (device->card_type < NV_C0)
++		nvkm_wr32(device, 0x10a580, 0x00000000);
+ 
+ 	/* call MEMX process to execute the script, and wait for reply */
+ 	if (exec) {

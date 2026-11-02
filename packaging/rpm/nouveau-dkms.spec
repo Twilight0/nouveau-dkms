@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.2.3
+Version:        2.3.0
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -56,6 +56,13 @@ fi
 %config(noreplace) %{_sysconfdir}/modprobe.d/nouveau.conf
 
 %changelog
+* Mon Nov 02 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.0-1
+- Release v2.3.0: Multi-kernel support (Linux 6.18 through 7.3) & modular patch queue.
+- Centralized multi-kernel compatibility layer (nouveau_compat.h).
+- Out-of-tree DKMS support across Linux 6.18 LTS, 7.2 Arch, and 7.3 CachyOS (Clang LLVM=1).
+- Modularize patch queue into numbered universal and generation series (patches/series).
+- Automated GitHub Actions multi-kernel CI matrix with install-ready cross-distro packages.
+
 * Tue Oct 27 2026 Twilight0 <twilight0@vivaldi.net> - 2.2.3-1
 - Release v2.2.3: Zero-tear VBlank sync leading edge guarantee.
 - Disallow mid-VBlank reclocking starts to prevent raster scan overrun into active picture.

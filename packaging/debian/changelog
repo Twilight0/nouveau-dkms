@@ -1,3 +1,13 @@
+nouveau-dkms (2.3.0-1) unstable; urgency=medium
+
+  * Release v2.3.0: Multi-kernel support (Linux 6.18 through 7.3) & modular patch queue.
+  * Centralized multi-kernel compatibility layer (nouveau_compat.h).
+  * Out-of-tree DKMS support across Linux 6.18 LTS, 7.2 Arch, and 7.3 CachyOS (Clang LLVM=1).
+  * Modularize patch queue into numbered universal and generation series (patches/series).
+  * Automated GitHub Actions multi-kernel CI matrix with install-ready cross-distro packages (.pkg.tar.zst, .deb, .rpm).
+
+ -- Twilight0 <twilight0@vivaldi.net>  Mon, 02 Nov 2026 21:20:00 +0200
+
 nouveau-dkms (2.2.3-1) unstable; urgency=medium
 
   * Release v2.2.3: Zero-tear VBlank sync leading edge guarantee.
