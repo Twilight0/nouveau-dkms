@@ -1,8 +1,48 @@
 # Universal: Multi-kernel compatibility layer (Linux 6.18 through 7.3)
+diff -ruN a/dispnv04/crtc.c b/dispnv04/crtc.c
+--- a/dispnv04/crtc.c	2026-06-12 01:03:26.000000000 +0300
++++ b/dispnv04/crtc.c	2026-11-03 22:14:30.837703189 +0200
+@@ -923,6 +923,7 @@
+ 	return nv04_crtc_do_mode_set_base(crtc, old_fb, x, y, false);
+ }
+ 
++#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
+ static int
+ nv04_crtc_mode_set_base_atomic(struct drm_crtc *crtc,
+ 			       struct drm_framebuffer *fb,
+@@ -930,6 +931,7 @@
+ {
+ 	return nv04_crtc_do_mode_set_base(crtc, fb, x, y, true);
+ }
++#endif
+ 
+ static void nv04_cursor_upload(struct drm_device *dev, struct nouveau_bo *src,
+ 			       struct nouveau_bo *dst)
+@@ -1274,7 +1276,9 @@
+ 	.commit = nv_crtc_commit,
+ 	.mode_set = nv_crtc_mode_set,
+ 	.mode_set_base = nv04_crtc_mode_set_base,
++#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
+ 	.mode_set_base_atomic = nv04_crtc_mode_set_base_atomic,
++#endif
+ 	.disable = nv_crtc_disable,
+ 	.get_scanout_position = nouveau_display_scanoutpos,
+ };
+diff -ruN a/nouveau_bo.h b/nouveau_bo.h
+--- a/nouveau_bo.h	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_bo.h	2026-11-03 22:14:30.837321856 +0200
+@@ -4,6 +4,7 @@
+ #include <drm/drm_gem.h>
+ #include <drm/ttm/ttm_bo.h>
+ #include <drm/ttm/ttm_placement.h>
++#include "nouveau_compat.h"
+ 
+ struct nouveau_channel;
+ struct nouveau_cli;
 diff -ruN a/nouveau_compat.h b/nouveau_compat.h
---- a/nouveau_compat.h	1970-01-01 00:00:00.000000000 +0000
-+++ b/nouveau_compat.h	2026-11-02 19:30:00.000000000 +0200
-@@ -0,0 +1,77 @@
+--- a/nouveau_compat.h	1970-01-01 02:00:00.000000000 +0200
++++ b/nouveau_compat.h	2026-11-03 22:14:30.839060973 +0200
+@@ -0,0 +1,81 @@
 +/* SPDX-License-Identifier: MIT */
 +#ifndef __NOUVEAU_COMPAT_H__
 +#define __NOUVEAU_COMPAT_H__
@@ -68,6 +108,10 @@ diff -ruN a/nouveau_compat.h b/nouveau_compat.h
 +#define drm_atomic_state_default_release drm_atomic_commit_default_release
 +
 +#define drm_sched_entity_fini(entity)    drm_sched_entity_kill(entity)
++
++#define NOUVEAU_WQ_FLAGS                 WQ_PERCPU
++#else
++#define NOUVEAU_WQ_FLAGS                 0
 +#endif
 +
 +/*
@@ -80,60 +124,9 @@ diff -ruN a/nouveau_compat.h b/nouveau_compat.h
 +#endif
 +
 +#endif /* __NOUVEAU_COMPAT_H__ */
-diff -ruN a/nouveau_drv.h b/nouveau_drv.h
---- a/nouveau_drv.h	2026-06-12 01:03:26.000000000 +0300
-+++ b/nouveau_drv.h	2026-11-02 19:30:50.873558253 +0200
-@@ -49,6 +49,7 @@
- #include <drm/drm_device.h>
- #include <drm/drm_drv.h>
- #include <drm/drm_file.h>
-+#include "nouveau_compat.h"
- 
- #include <drm/ttm/ttm_bo.h>
- #include <drm/ttm/ttm_placement.h>
-diff -ruN a/nouveau_bo.h b/nouveau_bo.h
---- a/nouveau_bo.h	2026-06-12 01:03:26.000000000 +0300
-+++ b/nouveau_bo.h	2026-11-02 19:32:00.162034113 +0200
-@@ -4,6 +4,7 @@
- #include <drm/drm_gem.h>
- #include <drm/ttm/ttm_bo.h>
- #include <drm/ttm/ttm_placement.h>
-+#include "nouveau_compat.h"
- 
- struct nouveau_channel;
- struct nouveau_cli;
-diff -ruN a/dispnv04/crtc.c b/dispnv04/crtc.c
---- a/dispnv04/crtc.c	2026-06-12 01:03:26.000000000 +0300
-+++ b/dispnv04/crtc.c	2026-11-02 19:30:50.873910893 +0200
-@@ -923,6 +923,7 @@
- 	return nv04_crtc_do_mode_set_base(crtc, old_fb, x, y, false);
- }
- 
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
- static int
- nv04_crtc_mode_set_base_atomic(struct drm_crtc *crtc,
- 			       struct drm_framebuffer *fb,
-@@ -930,6 +931,7 @@
- {
- 	return nv04_crtc_do_mode_set_base(crtc, fb, x, y, true);
- }
-+#endif
- 
- static void nv04_cursor_upload(struct drm_device *dev, struct nouveau_bo *src,
- 			       struct nouveau_bo *dst)
-@@ -1274,7 +1276,9 @@
- 	.commit = nv_crtc_commit,
- 	.mode_set = nv_crtc_mode_set,
- 	.mode_set_base = nv04_crtc_mode_set_base,
-+#if LINUX_VERSION_CODE < KERNEL_VERSION(7, 0, 0)
- 	.mode_set_base_atomic = nv04_crtc_mode_set_base_atomic,
-+#endif
- 	.disable = nv_crtc_disable,
- 	.get_scanout_position = nouveau_display_scanoutpos,
- };
 diff -ruN a/nouveau_dmem.c b/nouveau_dmem.c
 --- a/nouveau_dmem.c	2026-06-12 01:03:26.000000000 +0300
-+++ b/nouveau_dmem.c	2026-11-02 19:30:50.874183374 +0200
++++ b/nouveau_dmem.c	2026-11-03 22:14:30.838053671 +0200
 @@ -219,8 +219,19 @@
  	return ret;
  }
@@ -156,7 +149,7 @@ diff -ruN a/nouveau_dmem.c b/nouveau_dmem.c
  
 diff -ruN a/nouveau_drm.c b/nouveau_drm.c
 --- a/nouveau_drm.c	2026-06-12 01:03:26.000000000 +0300
-+++ b/nouveau_drm.c	2026-11-02 19:30:50.874433542 +0200
++++ b/nouveau_drm.c	2026-11-03 22:14:30.839305558 +0200
 @@ -156,6 +156,16 @@
  static inline bool
  nouveau_cli_work_ready(struct dma_fence *fence)
@@ -182,9 +175,29 @@ diff -ruN a/nouveau_drm.c b/nouveau_drm.c
  }
  
  static void
+@@ -631,7 +642,7 @@
+ 	struct drm_device *dev = drm->dev;
+ 	int ret;
+ 
+-	drm->sched_wq = alloc_workqueue("nouveau_sched_wq_shared", 0,
++	drm->sched_wq = alloc_workqueue("nouveau_sched_wq_shared", NOUVEAU_WQ_FLAGS,
+ 					WQ_MAX_ACTIVE);
+ 	if (!drm->sched_wq)
+ 		return -ENOMEM;
+diff -ruN a/nouveau_drv.h b/nouveau_drv.h
+--- a/nouveau_drv.h	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_drv.h	2026-11-03 22:14:30.837101582 +0200
+@@ -49,6 +49,7 @@
+ #include <drm/drm_device.h>
+ #include <drm/drm_drv.h>
+ #include <drm/drm_file.h>
++#include "nouveau_compat.h"
+ 
+ #include <drm/ttm/ttm_bo.h>
+ #include <drm/ttm/ttm_placement.h>
 diff -ruN a/nouveau_fence.c b/nouveau_fence.c
 --- a/nouveau_fence.c	2026-06-12 01:03:26.000000000 +0300
-+++ b/nouveau_fence.c	2026-11-02 19:30:50.874609983 +0200
++++ b/nouveau_fence.c	2026-11-03 22:14:30.838630717 +0200
 @@ -41,7 +41,11 @@
  static inline struct nouveau_fence_chan *
  nouveau_fctx(struct nouveau_fence *fence)
@@ -197,3 +210,15 @@ diff -ruN a/nouveau_fence.c b/nouveau_fence.c
  }
  
  static bool
+diff -ruN a/nouveau_sched.c b/nouveau_sched.c
+--- a/nouveau_sched.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nouveau_sched.c	2026-11-03 22:14:30.839455647 +0200
+@@ -416,7 +416,7 @@
+ 	int ret;
+ 
+ 	if (!wq) {
+-		wq = alloc_workqueue("nouveau_sched_wq_%d", 0, WQ_MAX_ACTIVE,
++		wq = alloc_workqueue("nouveau_sched_wq_%d", NOUVEAU_WQ_FLAGS, WQ_MAX_ACTIVE,
+ 				     current->pid);
+ 		if (!wq)
+ 			return -ENOMEM;

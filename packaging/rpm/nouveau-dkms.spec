@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.3.1
+Version:        2.3.2
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -56,6 +56,12 @@ fi
 %config(noreplace) %{_sysconfdir}/modprobe.d/nouveau.conf
 
 %changelog
+* Tue Nov 03 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.2-1
+- Release v2.3.2: Fix Linux 7.2+ workqueue affinity and Plymouth boot hangs.
+- Guard experimental Fermi PMU diagnostic self-tests behind NvFermiDiag option.
+- Eliminate 8.5s PMU timeout preventing Plymouth quit handover to display manager.
+- Specify WQ_PERCPU on Linux 7.2+ workqueue allocations to eliminate kernel WARN_ON.
+
 * Tue Nov 03 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.1-1
 - Release v2.3.1: Fix DRIVER_GEM_GPUVA compatibility shim for Linux kernels >= 7.3.
 - Prevent DRIVER_GEM_GPUVA definition omission on kernels < 7.3 to avoid boot crash.

@@ -1,3 +1,12 @@
+nouveau-dkms (2.3.2-1) unstable; urgency=medium
+
+  * Release v2.3.2: Fix Linux 7.2+ workqueue affinity and Plymouth boot hangs.
+  * Guard experimental Fermi PMU diagnostic self-tests behind NvFermiDiag option.
+  * Eliminate 8.5s PMU timeout preventing Plymouth quit handover to display manager.
+  * Specify WQ_PERCPU on Linux 7.2+ workqueue allocations to eliminate kernel WARN_ON.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Tue, 03 Nov 2026 22:40:00 +0200
+
 nouveau-dkms (2.3.1-1) unstable; urgency=medium
 
   * Release v2.3.1: Fix DRIVER_GEM_GPUVA compatibility shim for Linux kernels >= 7.3.

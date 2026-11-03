@@ -4,6 +4,18 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.3.2] - 2026-11-03
+
+### Bug Fixes
+- **Guard Fermi PMU Diagnostic Self-Tests Behind `NvFermiDiag` Flag**:
+  - In `nvkm/subdev/pmu/gt215.c`, experimental Fermi PDAEMON microcode diagnostics (Falcon pause trigger, message audits, DMEM verify sweeps, and INFO/TEST reply waits) ran unconditionally during early probe. On boards with uncooperative PMU firmware (such as GF119M GeForce 410M), this caused repeated 2000 ms timeouts (8.5 seconds total stall during boot).
+  - These tests are now guarded behind `nouveau.config=NvFermiDiag=1`, allowing normal boot device initialization to finish instantly without stalling display handover or triggering `plymouth-quit.service` timeouts.
+- **Linux 7.2+ Workqueue Affinity (`WQ_PERCPU`)**:
+  - Linux 7.2+ enforces that workqueues created via `alloc_workqueue()` specify either `WQ_PERCPU` or `WQ_UNBOUND`. Passing `0` triggered an in-kernel `WARN_ON` stack dump in `alloc_workqueue_va()`.
+  - Added compatibility define `NOUVEAU_WQ_FLAGS` (`WQ_PERCPU` for Linux >= 7.2.0, fallback `0` on earlier kernels) in `nouveau_compat.h` and updated scheduler and DRM shared workqueue allocations in `nouveau_drm.c` and `nouveau_sched.c`.
+
+---
+
 ## [2.3.1] - 2026-11-03
 
 ### Bug Fixes
