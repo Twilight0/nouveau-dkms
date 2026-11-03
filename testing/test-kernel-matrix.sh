@@ -268,7 +268,7 @@ fi
 if [[ "${DO_INSTALLED}" -eq 1 ]]; then
     candidate_dirs=()
     for d in /usr/lib/modules/*/build /lib/modules/*/build /usr/src/kernels/* /usr/src/linux-obj/*/*/ /usr/src/linux-headers-*; do
-        if [[ -d "${d}" && -f "${d}/Makefile" ]]; then
+        if [[ -d "${d}" && -f "${d}/Makefile" && ( -f "${d}/include/config/auto.conf" || -f "${d}/.config" ) ]]; then
             real_d="$(cd "${d}" && pwd -P)"
             candidate_dirs+=("${real_d}")
         fi

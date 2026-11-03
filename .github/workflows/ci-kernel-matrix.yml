@@ -65,7 +65,7 @@ jobs:
             cmd: "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential linux-headers-amd64 kmod bc bison flex python3 libelf-dev libssl-dev patch"
           - label: "openSUSE Tumbleweed (kernel-default-devel / GCC)"
             image: "opensuse/tumbleweed:latest"
-            cmd: "zypper --non-interactive install --no-recommends kernel-default-devel gcc make diffutils patch python3 tar elfutils-libelf-devel bc bison flex kmod findutils gawk"
+            cmd: "zypper --non-interactive install --no-recommends kernel-default-devel gcc make diffutils patch python3-base tar libelf-devel bc bison flex kmod findutils gawk"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

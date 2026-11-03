@@ -372,6 +372,12 @@ def detect_kernel_build_dirs():
     for pat in patterns:
         for p in glob.glob(pat):
             if os.path.isdir(p) and os.path.isfile(os.path.join(p, "Makefile")):
+                has_config = (
+                    os.path.isfile(os.path.join(p, "include", "config", "auto.conf"))
+                    or os.path.isfile(os.path.join(p, ".config"))
+                )
+                if not has_config:
+                    continue
                 real_p = os.path.realpath(p)
                 if real_p not in seen:
                     seen.add(real_p)
