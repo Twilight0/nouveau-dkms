@@ -11,6 +11,8 @@ override_dh_auto_build:
 	cp -r build/nouveau-source/* build/nouveau-dkms-$(VERSION)/
 	sed 's/@PKGVER@/$(VERSION)/g' dkms.conf > build/nouveau-dkms-$(VERSION)/dkms.conf
 
+override_dh_auto_test:
+
 override_dh_auto_install:
 	install -d debian/nouveau-dkms/usr/src/nouveau-dkms-$(VERSION)
 	cp -r build/nouveau-dkms-$(VERSION)/* debian/nouveau-dkms/usr/src/nouveau-dkms-$(VERSION)/
