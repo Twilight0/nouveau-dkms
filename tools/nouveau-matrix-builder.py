@@ -312,6 +312,21 @@ def cmd_build_patch(args):
         out_file = Path(args.out) if args.out else REPO_ROOT / f"nouveau-{gen}.patch"
         out_file.write_text(patch_content, encoding="utf-8")
         log("PASS", f"Built monolithic patch for '{gen}': {out_file} ({len(patch_content.splitlines())} lines)")
+        
+        if out_file.resolve() == (REPO_ROOT / "nouveau.patch").resolve():
+            pkgbuild = REPO_ROOT / "PKGBUILD"
+            if pkgbuild.exists():
+                import hashlib
+                h = hashlib.sha256(patch_content.encode("utf-8")).hexdigest()
+                pb_text = pkgbuild.read_text(encoding="utf-8")
+                import re
+                pb_text = re.sub(
+                    r"('[a-f0-9]{64}'\s*\n\s*)'[a-f0-9]{64}'(\s*\n\s*'7f0d3d86)",
+                    r"\g<1>'" + h + r"'\2",
+                    pb_text
+                )
+                pkgbuild.write_text(pb_text, encoding="utf-8")
+                log("INFO", f"Synchronized nouveau.patch sha256 in PKGBUILD ({h[:16]}...)")
 
 def cmd_build_tree(args):
     """Extracts nouveau-source.tar.gz and applies generation patches to a target directory."""

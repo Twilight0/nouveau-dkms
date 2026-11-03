@@ -18,7 +18,7 @@ source=(
   "nouveau.conf"
 )
 sha256sums=('1426cea7f5c4959cfcaec78b4974cde3071f51eb9fdf9beedf38efae0bc6b9ad'
-            'a309ef9835846c18c10037345bded7c6e672cc02b77dce1f012707c706ad96a4'
+            'f13811000fa16416088619b65e47207f5b515c0fc77470740d01f29ffec9712b'
             '7f0d3d86a1551d4f1775d6dea33568f04d59dbf38faa7e9d50c0b327cfc327a6'
             '326efac21bf858f7be0e41b21f2c585bfd1ef5b18dad9cce022685a4623bb090')
 
