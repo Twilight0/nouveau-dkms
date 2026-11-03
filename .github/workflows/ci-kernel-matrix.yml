@@ -60,7 +60,7 @@ jobs:
             HDR_PKG="$(curl -fsSL "${MIRROR_URL}/" | grep -oE 'linux-cachyos-headers-[0-9][^"]+\.pkg\.tar\.zst' | grep -v '\.sig$' | sort -V | tail -n1)"
             echo "Downloading ${HDR_PKG}..."
             curl -fsSL "${MIRROR_URL}/${HDR_PKG}" -o "/tmp/${HDR_PKG}"
-            pacman -U --nodeps --noconfirm "/tmp/${HDR_PKG}"
+            pacman -Udd --noconfirm "/tmp/${HDR_PKG}"
             rm -f "/tmp/${HDR_PKG}"
           fi
 
