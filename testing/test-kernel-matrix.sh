@@ -22,10 +22,12 @@ trap 'rm -rf "${WORK_DIR}"' EXIT
 UPSTREAM_TAGS=("v6.18" "v6.19" "v7.0" "v7.1" "v7.2" "v7.3")
 UPSTREAM_FILES=(
     "dispnv50/disp.c"
+    "include/nvkm/core/device.h"
     "nouveau_backlight.c"
     "nouveau_bo.c"
     "nouveau_debugfs.c"
     "nouveau_gem.c"
+    "nvkm/engine/device/pci.c"
     "nvkm/subdev/clk/base.c"
     "nvkm/subdev/clk/gf100.c"
     "nvkm/subdev/fb/ramfuc.h"
@@ -146,7 +148,7 @@ run_upstream_matrix() {
                 return 1
             fi
         done < "${series_file}"
-        log_ok "Upstream Linux ${tag}: All feature patches (0001..0003, 0010..0012) applied cleanly."
+        log_ok "Upstream Linux ${tag}: All feature patches (0001..0003, 0005, 0010..0012) applied cleanly."
     done
 }
 
