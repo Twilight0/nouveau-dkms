@@ -60,7 +60,7 @@ jobs:
             HDR_PKG="$(curl -fsSL "${MIRROR_URL}/" | grep -oE 'linux-cachyos-headers-[0-9][^"]+\.pkg\.tar\.zst' | grep -v '\.sig$' | sort -V | tail -n1)"
             echo "Downloading ${HDR_PKG}..."
             curl -fsSL "${MIRROR_URL}/${HDR_PKG}" -o "/tmp/${HDR_PKG}"
-            pacman -U --noconfirm "/tmp/${HDR_PKG}"
+            pacman -U --nodeps --noconfirm "/tmp/${HDR_PKG}"
             rm -f "/tmp/${HDR_PKG}"
           fi
 
@@ -167,7 +167,7 @@ jobs:
           cd packages-bundle
           sha256sum * > SHA256SUMS.txt
           {
-            echo "## 📦 Install-Ready \`nouveau-dkms\` Test Packages (Linux 6.18 – 7.3)"
+            echo "## Install-Ready \`nouveau-dkms\` Test Packages (Linux 6.18 – 7.3)"
             echo ""
             echo "All kernel matrix builds passed. Download the package for your distribution from the **Artifacts** section below:"
             echo ""
