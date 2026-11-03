@@ -3,6 +3,7 @@
 0002-drm-nouveau-ttm-vram-accounting-debugfs.patch
 0003-drm-nouveau-display-120hz-and-backlight.patch
 0004-drm-nouveau-compat-shims.patch
+0005-drm-nouveau-hardware-quirk-subsystem.patch
 0010-drm-nouveau-fermi-core-shader-pstates.patch
 0011-drm-nouveau-fermi-pdaemon-fuc3-bootstrap.patch
 0012-drm-nouveau-fermi-resident-falcon-ddr3-vblank.patch

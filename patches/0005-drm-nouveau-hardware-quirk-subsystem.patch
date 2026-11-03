@@ -1,0 +1,225 @@
+# Universal: Hardware and OEM subsystem quirk database (SSID matching)
+diff -ruN a/include/nvkm/core/device.h b/include/nvkm/core/device.h
+--- a/include/nvkm/core/device.h	2026-06-12 01:03:26.000000000 +0300
++++ b/include/nvkm/core/device.h	2026-11-03 13:22:29.771667954 +0200
+@@ -101,10 +101,7 @@
+ 	bool cpu_coherent;
+ };
+ 
+-struct nvkm_device_quirk {
+-	u8 tv_pin_mask;
+-	u8 tv_gpio;
+-};
++#include <core/quirks.h>
+ 
+ struct nvkm_device_chip {
+ 	const char *name;
+diff -ruN a/include/nvkm/core/quirks.h b/include/nvkm/core/quirks.h
+--- a/include/nvkm/core/quirks.h	1970-01-01 02:00:00.000000000 +0200
++++ b/include/nvkm/core/quirks.h	2026-11-03 13:22:29.771469447 +0200
+@@ -0,0 +1,42 @@
++/* SPDX-License-Identifier: MIT */
++#ifndef __NVKM_QUIRKS_H__
++#define __NVKM_QUIRKS_H__
++
++#include <linux/types.h>
++
++/*
++ * Hardware and OEM Subsystem Quirks
++ *
++ * Board-level workarounds and policy overrides matching PCI Subsystem IDs
++ * (subvendor:subdevice) to prevent OEM-specific wiring, panels, or power
++ * topologies from causing regressions across different machines sharing
++ * the same GPU silicon.
++ */
++
++/* Quirk policy flags */
++#define NOUVEAU_QUIRK_FORCE_DISPCLK_FLOOR    BIT(0) /* Needs dispclk >= 405 MHz (120 Hz eDP) */
++#define NOUVEAU_QUIRK_OPTIMUS_MUXLESS        BIT(1) /* Render-offload only; NVIDIA display engine unclocked */
++#define NOUVEAU_QUIRK_DDR3_3PARTITION        BIT(2) /* 192-bit DDR3 memory layout (3 FB partitions) */
++#define NOUVEAU_QUIRK_DDR3_1PARTITION        BIT(3) /* 64-bit DDR3 memory layout (1 FB partition) */
++#define NOUVEAU_QUIRK_SKIP_GDDR5_TRAINING    BIT(4) /* Mobile Kepler DDR3 link training bypass */
++#define NOUVEAU_QUIRK_DELL_SMM_THERMAL       BIT(5) /* Dell SMM shared blower fan and thermal profile */
++#define NOUVEAU_QUIRK_PANEL_TOLERANCE_5MHZ   BIT(6) /* 3D Vision panel pixel clock tolerance bypass */
++
++struct nvkm_device;
++
++struct nvkm_device_quirk {
++	u8 tv_pin_mask;
++	u8 tv_gpio;
++	u32 flags;
++	u32 min_dispclk_khz;
++	u8 fb_partitions;
++	const char *desc;
++};
++
++static inline bool
++nvkm_has_quirk(const struct nvkm_device *device, u32 flag)
++{
++	return device && device->quirk && (device->quirk->flags & flag);
++}
++
++#endif
+diff -ruN a/nvkm/engine/device/pci.c b/nvkm/engine/device/pci.c
+--- a/nvkm/engine/device/pci.c	2026-06-12 01:03:26.000000000 +0300
++++ b/nvkm/engine/device/pci.c	2026-11-03 13:22:29.772020370 +0200
+@@ -797,6 +797,85 @@
+ 	{}
+ };
+ 
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_0a3c[] = {
++	/* Lenovo ThinkPad W510 (Quadro FX 880M / GT216) */
++	{ 0x17aa, 0x2145, "Quadro FX 880M (ThinkPad W510)", {
++		.desc = "Lenovo ThinkPad W510",
++	} },
++	{ 0x17aa, 0x219a, "Quadro FX 880M (ThinkPad W510)", {
++		.desc = "Lenovo ThinkPad W510",
++	} },
++	{}
++};
++
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_0dcd[] = {
++	/* Dell XPS 17 (L702X) */
++	{ 0x1028, 0x04b7, "GeForce GT 555M (Dell XPS 17 L702X)", {
++		.flags = NOUVEAU_QUIRK_FORCE_DISPCLK_FLOOR |
++			 NOUVEAU_QUIRK_DDR3_3PARTITION |
++			 NOUVEAU_QUIRK_DELL_SMM_THERMAL |
++			 NOUVEAU_QUIRK_PANEL_TOLERANCE_5MHZ,
++		.min_dispclk_khz = 405000,
++		.fb_partitions = 3,
++		.desc = "Dell XPS 17 (L702X)",
++	} },
++	{}
++};
++
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_0dfc[] = {
++	/* Dell Latitude E6430 (GF108GLM GDDR5) */
++	{ 0x1028, 0x1534, "NVS 5200M (Dell Latitude E6430)", {
++		.desc = "Dell Latitude E6430",
++	} },
++	{}
++};
++
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_1050[] = {
++	/* ASUS K53SJ (Optimus muxless) */
++	{ 0x1043, (u16)PCI_ANY_ID, "GeForce GT 520M (ASUS Optimus Muxless)", {
++		.flags = NOUVEAU_QUIRK_OPTIMUS_MUXLESS |
++			 NOUVEAU_QUIRK_DDR3_1PARTITION,
++		.fb_partitions = 1,
++		.desc = "ASUS K53SJ Optimus Muxless",
++	} },
++	{}
++};
++
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_1055[] = {
++	/* Sony VAIO VPCEH18FA */
++	{ 0x104d, 0x908b, "GeForce 410M (Sony VAIO VPCEH18FA)", {
++		.flags = NOUVEAU_QUIRK_DDR3_1PARTITION,
++		.fb_partitions = 1,
++		.desc = "Sony VAIO VPCEH18FA",
++	} },
++	{}
++};
++
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_1057[] = {
++	/* Lenovo ThinkPad T520 */
++	{ 0x17aa, 0x21d1, "NVS 4200M (ThinkPad T520)", {
++		.flags = NOUVEAU_QUIRK_DDR3_1PARTITION,
++		.fb_partitions = 1,
++		.desc = "Lenovo ThinkPad T520",
++	} },
++	{}
++};
++
++static const struct nvkm_device_pci_vendor
++nvkm_device_pci_10de_1201[] = {
++	/* EVGA GeForce GTX 560 */
++	{ 0x3842, 0x1461, "GeForce GTX 560 (EVGA)", {
++		.desc = "EVGA GeForce GTX 560",
++	} },
++	{}
++};
++
+ static const struct nvkm_device_pci_device
+ nvkm_device_pci_10de[] = {
+ 	{ 0x0020, "RIVA TNT" },
+@@ -1249,7 +1328,7 @@
+ 	{ 0x0a34, "GeForce GT 240M" },
+ 	{ 0x0a35, "GeForce GT 325M" },
+ 	{ 0x0a38, "Quadro 400" },
+-	{ 0x0a3c, "Quadro FX 880M" },
++	{ 0x0a3c, "Quadro FX 880M", nvkm_device_pci_10de_0a3c },
+ 	{ 0x0a60, "GeForce G210" },
+ 	{ 0x0a62, "GeForce 205" },
+ 	{ 0x0a63, "GeForce 310" },
+@@ -1290,7 +1369,7 @@
+ 	{ 0x0dc4, "GeForce GTS 450" },
+ 	{ 0x0dc5, "GeForce GTS 450" },
+ 	{ 0x0dc6, "GeForce GTS 450" },
+-	{ 0x0dcd, "GeForce GT 555M" },
++	{ 0x0dcd, "GeForce GT 555M", nvkm_device_pci_10de_0dcd },
+ 	{ 0x0dce, "GeForce GT 555M" },
+ 	{ 0x0dd1, "GeForce GTX 460M" },
+ 	{ 0x0dd2, "GeForce GT 445M" },
+@@ -1324,7 +1403,7 @@
+ 	{ 0x0df8, "Quadro 600" },
+ 	{ 0x0df9, "Quadro 500M" },
+ 	{ 0x0dfa, "Quadro 1000M" },
+-	{ 0x0dfc, "NVS 5200M" },
++	{ 0x0dfc, "NVS 5200M", nvkm_device_pci_10de_0dfc },
+ 	{ 0x0e22, "GeForce GTX 460" },
+ 	{ 0x0e23, "GeForce GTX 460 SE" },
+ 	{ 0x0e24, "GeForce GTX 460" },
+@@ -1397,13 +1476,13 @@
+ 	{ 0x104a, "GeForce GT 610" },
+ 	{ 0x104b, "GeForce GT 625 (OEM)", nvkm_device_pci_10de_104b },
+ 	{ 0x104c, "GeForce GT 705" },
+-	{ 0x1050, "GeForce GT 520M" },
++	{ 0x1050, "GeForce GT 520M", nvkm_device_pci_10de_1050 },
+ 	{ 0x1051, "GeForce GT 520MX" },
+ 	{ 0x1052, "GeForce GT 520M" },
+ 	{ 0x1054, "GeForce 410M" },
+-	{ 0x1055, "GeForce 410M" },
++	{ 0x1055, "GeForce 410M", nvkm_device_pci_10de_1055 },
+ 	{ 0x1056, "NVS 4200M" },
+-	{ 0x1057, "NVS 4200M" },
++	{ 0x1057, "NVS 4200M", nvkm_device_pci_10de_1057 },
+ 	{ 0x1058, "GeForce 610M", nvkm_device_pci_10de_1058 },
+ 	{ 0x1059, "GeForce 610M" },
+ 	{ 0x105a, "GeForce 610M" },
+@@ -1477,7 +1556,7 @@
+ 	{ 0x11fa, "Quadro K4000" },
+ 	{ 0x11fc, "Quadro K2100M" },
+ 	{ 0x1200, "GeForce GTX 560 Ti" },
+-	{ 0x1201, "GeForce GTX 560" },
++	{ 0x1201, "GeForce GTX 560", nvkm_device_pci_10de_1201 },
+ 	{ 0x1203, "GeForce GTX 460 SE v2" },
+ 	{ 0x1205, "GeForce GTX 460 v2" },
+ 	{ 0x1206, "GeForce GTX 555" },
+@@ -1674,7 +1753,7 @@
+ 		if (pciv = pcid->vendor, pcid->device == pci_dev->device) {
+ 			while (pciv && pciv->vendor) {
+ 				if (pciv->vendor == pci_dev->subsystem_vendor &&
+-				    pciv->device == pci_dev->subsystem_device) {
++				    (pciv->device == pci_dev->subsystem_device || pciv->device == (u16)PCI_ANY_ID)) {
+ 					quirk = &pciv->quirk;
+ 					name  =  pciv->name;
+ 					break;
+@@ -1720,5 +1799,11 @@
+ 		pdev->device.mmu->dma_bits = 32;
+ 	}
+ 
++	if (pdev->device.quirk && pdev->device.quirk->flags) {
++		dev_info(&pci_dev->dev, "nouveau: hardware quirk matched: %s (flags 0x%08x)\n",
++			 pdev->device.quirk->desc ? pdev->device.quirk->desc : "custom",
++			 pdev->device.quirk->flags);
++	}
++
+ 	return 0;
+ }

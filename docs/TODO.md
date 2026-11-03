@@ -112,8 +112,10 @@ This document tracks completed milestones, open engineering tasks, and the multi
   - Extract `.rodata` tables from `nv-kernel.o_binary` and program them during `gr`/`fb`/`therm` init, cutting idle leakage by `2–4 W` and providing dynamic power/thermal headroom so the core maintains maximum boost frequency without thermal throttling.
 
 ### 6. Hardware Quirk & Device Profile Database (`quirks.h`)
-- [ ] **Unified `quirks.h` Subsystem Table**:
-  - Map OEM Subsystem IDs (e.g., Dell `1028:04b7` for XPS L702X) to automatically apply panel quirks, display hub clock floors, and board-specific timings from community `tools/nouveau-fermi-diag.py` reports.
+- [x] **Unified `quirks.h` Subsystem Table (`include/nvkm/core/quirks.h` & `0005` patch)**:
+  - Implemented PCI Subsystem ID (SSID) quirk subsystem matching vendor and device IDs (`pdev->subsystem_vendor` / `pdev->subsystem_device`).
+  - Added initial quirk profiles for Dell XPS 17 L702X (`1028:04b7`), ASUS K53SJ Optimus muxless (`1043:xxxx`), Sony VAIO VPCEH18FA (`104d:908b`), Lenovo ThinkPad T520 (`17aa:21d1`), Dell Latitude E6430 (`1028:1534`), EVGA GTX 560 (`3842:1461`), and Lenovo ThinkPad W510 (`17aa:2145`).
+  - Guarded VBlank sync and unclocked display engine access via `NOUVEAU_QUIRK_OPTIMUS_MUXLESS` in `ramgf100.c` to resolve bus lockups on muxless hybrid laptops (Issue #7).
 
 ---
 

@@ -477,7 +477,7 @@ diff -ruN a/nvkm/subdev/fb/ramgf100.c b/nvkm/subdev/fb/ramgf100.c
  };
  
  static void
-@@ -123,6 +128,480 @@
+@@ -123,6 +128,482 @@
  	}
  }
  
@@ -602,6 +602,8 @@ diff -ruN a/nvkm/subdev/fb/ramgf100.c b/nvkm/subdev/fb/ramgf100.c
 +	if (!nvkm_boolopt(device->cfgopt, "NvFermiVblankSync", true))
 +		return 0;
 +	if (!device->disp || !device->fb)
++		return 0;
++	if (nvkm_has_quirk(device, NOUVEAU_QUIRK_OPTIMUS_MUXLESS))
 +		return 0;
 +	subdev = &device->fb->subdev;
 +	heads = nvkm_rd32(device, 0x610050);

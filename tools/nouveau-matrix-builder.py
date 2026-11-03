@@ -53,6 +53,9 @@ GENERATIONS = {
             "dispnv50/disp.c",
             "nouveau_backlight.c",
             "nouveau_compat.h",
+            "include/nvkm/core/quirks.h",
+            "include/nvkm/core/device.h",
+            "nvkm/engine/device/pci.c",
         ],
     },
     "fermi": {
@@ -280,12 +283,17 @@ def cmd_build_patch(args):
     
     with tempfile.TemporaryDirectory() as tmpdir:
         tmp_path = Path(tmpdir)
-        orig_dir = tmp_path / "orig" / "nouveau-source"
-        patched_dir = tmp_path / "patched" / "nouveau-source"
+        orig_extract = tmp_path / "orig"
+        patched_extract = tmp_path / "patched"
+        orig_dir = tmp_path / "a"
+        patched_dir = tmp_path / "b"
         
         with tarfile.open(SOURCE_TAR, "r:gz") as tar:
-            tar.extractall(path=tmp_path / "orig")
-            tar.extractall(path=tmp_path / "patched")
+            tar.extractall(path=orig_extract)
+            tar.extractall(path=patched_extract)
+            
+        (orig_extract / "nouveau-source").rename(orig_dir)
+        (patched_extract / "nouveau-source").rename(patched_dir)
             
         for p in patches:
             res = subprocess.run(["patch", "--fuzz=0", "-Np1", "-s", "-d", str(patched_dir)],
@@ -295,7 +303,7 @@ def cmd_build_patch(args):
                 return 1
                 
         diff_res = subprocess.run(
-            ["diff", "-ruN", "orig/nouveau-source", "patched/nouveau-source"],
+            ["diff", "-ruN", "a", "b"],
             cwd=str(tmp_path), capture_output=True, text=True
         )
         
