@@ -1,33 +1,13 @@
 ---
-name: Hardware Telemetry Report
-about: Submit diagnostic data from your Fermi GPU to help expand compatibility
-title: '[Hardware Report] GPU Model - Laptop/Motherboard Model'
-labels: 'hardware-telemetry'
+name: Hardware Compatibility & Telemetry (Moved to Discussions)
+about: Hardware diagnostic dumps and compatibility reports are now tracked in GitHub Discussions
+title: '[Hardware Compatibility] '
+labels: 'question'
 assignees: ''
 ---
 
-### 💻 Device Summary
-- **GPU Model:** (e.g. GeForce GT 555M / GTX 460M / GTX 580)
-- **Computer / Motherboard:** (e.g. Dell XPS L702X / ASUS G73SW / Custom Desktop)
-- **Display Connection:** (eDP internal 120Hz, LVDS, HDMI, DisplayPort, DVI)
-
----
-
-### 📋 Diagnostic Output
-<!-- Please run: sudo python3 tools/nouveau-fermi-diag.py -->
-<!-- Paste the generated markdown report below -->
-
-```markdown
-
-```
-
----
-
-### 🧪 Test Results
-- [ ] Base clocks (`07`) stable: (Yes / No)
-- [ ] Boost clocks (`0f`) stable: (Yes / No)
-- [ ] Monitor sync maintained during reclocking: (Yes / No)
-- [ ] Desired refresh rate achieved (e.g., 60Hz / 120Hz): (Yes / No)
-
-### 📝 Additional Notes / Observations
-(Any quirks, thermals, or special behaviors observed on your machine)
+> **Note**: General hardware diagnostic dumps and compatibility reports have moved to [GitHub Discussions](https://github.com/Twilight0/nouveau-dkms/discussions).
+>
+> If your driver is working or you are submitting diagnostic logs from `nouveau-fermi-diag.py`, please post under **[GitHub Discussions](https://github.com/Twilight0/nouveau-dkms/discussions)** instead of opening an issue.
+>
+> If you are experiencing an actual bug, system freeze, or regression, please use the **[Bug Report](https://github.com/Twilight0/nouveau-dkms/issues/new?template=bug_report.md)** template.

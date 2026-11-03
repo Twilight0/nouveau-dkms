@@ -312,8 +312,12 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
   - Maintain an `upstream-tracking` branch mirroring upstream Linux `drivers/gpu/drm/nouveau`.
   - When upstream lands significant modern features (e.g. HDMI 2.1 for Blackwell, HDMI Deep Color, MST audio improvements), rebase the modular patch queue cleanly on top of the newer upstream snapshot.
   - Automate rebuilding `nouveau-source.tar.gz` and tagging new driver versions when rebasing onto new major kernel releases.
-- [ ] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
-  - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` against `linux-cachyos-lts`, `linux-cachyos`, Arch `linux`, and `linux-lts` headers, and runs `shellcheck` / `py_compile` on userspace scripts.
+- [x] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
+  - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` across Arch `linux-lts` (6.18), Arch `linux` (7.2+), and CachyOS `linux-cachyos` (7.3+ / Clang `LLVM=1`), and packages `.deb`, `.rpm`, and `.pkg.tar.zst` artifacts.
+- [x] **Community Triage & Workflow Shift (Discussions vs. Issues)**:
+  - Transitioned the community triage model: raw hardware diagnostic dumps and general compatibility tests are routed to GitHub Discussions (e.g. dedicated compatibility threads), freeing the GitHub Issue tracker strictly for actionable bug reports, panics, and regressions.
+  - Subsystem IDs and board-level findings reported in Discussions are triaged and ingested into `include/nvkm/core/quirks.h`.
+  - Updated `docs/CONTRIBUTING.md` and issue templates to reflect the strict issue reporting scheme.
 - [x] **Package Rename / Transition (done: `nouveau-dkms`, was `nouveau-fermi-reclock-dkms`)**:
   - `PKGBUILD` carries `provides=('nouveau-fermi-reclock-dkms')`, `conflicts=('nouveau-fermi-reclock-dkms' 'nouveau-fermi-reclock-cachyos-lts-v2')`, `replaces=('nouveau-fermi-reclock-dkms')` so the old AUR package and prebuilt upgrade cleanly. Completed on AUR and AliveOS repository.
 - [x] **Codebase Decoupling (`nouveau-dkms` & `nouveau-utils`)**:
