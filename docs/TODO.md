@@ -277,20 +277,20 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
 | **Maxwell 2 & Pascal** (`NV120`–`NV138`) | `GM200`–`GP108` | GeForce GTX 900 & GTX 10-series | **HS RSA-Signed ACR/PMU** | Investigate extracting signed PMU/ACR images from official redistributables + unified governor and `fdinfo` telemetry. |
 
 ### Out-of-Tree Maintenance, Multi-Kernel CI & Cross-Distro Packaging Tasks
-- [ ] **Deconstruct Monolithic `nouveau.patch` into a Modular Multi-Generation Patch Queue (`patches/`)**:
-  - Organize the patch series into tiered, logical series ranges:
+- [x] **Deconstruct Monolithic `nouveau.patch` into a Modular Multi-Generation Patch Queue (`patches/`)**:
+  - Organized the patch series into tiered, logical series ranges:
     - **`0001`–`0009` — Universal Subsystem Improvements (All Architectures)**:
       - `0001-drm-nouveau-bo-enforce-256b-alignment.patch` (Fermi+ color target hardware alignment in `nouveau_bo.c` / `nouveau_gem.c`)
       - `0002-drm-nouveau-ttm-vram-accounting-debugfs.patch` (In-kernel TTM VRAM usage reporting in `nouveau_debugfs.c`)
-      - `0003-drm-nouveau-display-120hz-full-view.patch` (High-refresh 120 Hz view preservation in `dispnv50/disp.c`)
+      - `0003-drm-nouveau-display-120hz-and-backlight.patch` (High-refresh 120 Hz view preservation in `dispnv50/disp.c`)
       - `0004-drm-nouveau-compat-shims.patch` (`nouveau_compat.h` multi-kernel compatibility layer)
     - **`0010`–`0019` — Fermi (`GF100`–`GF119`) Reclocking & VBlank Synchronization**:
       - `0010-drm-nouveau-fermi-core-shader-pstates.patch` (`clk/base.c`, `clk/gf100.c`)
-      - `0011-drm-nouveau-fermi-resident-falcon-ddr3.patch` (`fexec_code.inc`, `ramfuc.h`, `ramgf100.c`)
-      - `0012-drm-nouveau-fermi-vblank-leading-edge.patch` (`ramgf100.c` zero-tear approach-zone VBlank synchronization)
+      - `0011-drm-nouveau-fermi-pdaemon-fuc3-bootstrap.patch` (`pmu/fuc/gf100.fuc3.h`, `pmu/memx.c`, `pmu/gt215.c`)
+      - `0012-drm-nouveau-fermi-resident-falcon-ddr3-vblank.patch` (`ramgf100.c` zero-tear approach-zone VBlank synchronization)
     - **`0020`–`0029` — Kepler (`GK104`–`GK208`) Reclocking & Hardware Boost**:
       - `0020-drm-nouveau-kepler-pstate-tables.patch` (`clk/gk104.c`, `clk/gk20a.c`)
-      - `0021-drm-nouveau-kepler-ram-timings.patch` (`fb/ramgk104.c` mobile `GK107M`/`GK208M` DDR3/GDDR5 scaling)
+      - `0021-drm-nouveau-kepler-ram-timings.patch` (`fb/ramgk104.c` mobile `GK107M`/`GK208M` DDR3 fix bypassing GDDR5 link training)
     - **`0030`–`0039` — Maxwell 1 (`GM107`–`GM108`) Reclocking (Unsigned PMU)**:
       - `0030-drm-nouveau-maxwell1-pmu-falcon.patch` (`pmu/gm107.c`, `clk/gm107.c`, `fb/ramgm107.c`)
     - **`0040`–`0049` — Tesla (`GT215`–`GT218`) PDAEMON Reclocking**:
@@ -299,9 +299,13 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
     - Universal patches apply cleanly across all GPUs.
     - Generation-specific patches touch isolated subdev paths (`clk/gk104.c` vs `clk/gf100.c`, `fb/ramgk104.c` vs `fb/ramgf100.c`), ensuring changes to one generation can never regress or conflict with another.
     - Enables testing and rolling out support for new silicon (such as Kepler or Maxwell 1) independently without touching tested Fermi production code.
-- [ ] **Centralized Multi-Kernel Compatibility Header (`nouveau_compat.h`)**:
-  - Consolidate all `LINUX_VERSION_CODE` API wrappers (such as the Linux `6.18.55` `drm_client_dev_suspend()` argument change and upcoming `6.19+` TTM/DRM-scheduler shifts) into a single `nouveau_compat.h` header.
-  - Allows the same unified driver tree to compile out-of-tree without modifications across `6.12 LTS`, `6.18 LTS`, and mainline kernels.
+- [x] **Centralized Multi-Kernel Compatibility Header (`nouveau_compat.h`)**:
+  - Consolidated all `LINUX_VERSION_CODE` API wrappers (including Linux `6.18.55` `drm_client_dev_suspend()` argument change and `7.0`..`7.3+` TTM/DRM-scheduler shifts) into a single `nouveau_compat.h` header.
+  - Allows the same unified driver tree to compile out-of-tree without modifications across `6.18 LTS`, `7.2` Arch, and `7.3` CachyOS Clang.
+- [x] **Multi-Generation Chip Matrix Builder (`tools/nouveau-matrix-builder.py` & `testing/test-kernel-matrix.sh`)**:
+  - Automated builder supporting generation profiling (`universal`, `fermi`, `kepler`, `maxwell1`, `tesla`, `all`).
+  - Implements `--check-isolation`, standalone monolithic patch synthesis (`--build-patch <gen>`), independent tree construction (`--build-tree <gen>`), and 2D compilation testing against installed kernels.
+  - Accommodates Kepler and Maxwell 1 "hybrid" V/F Boost reclocking curves and mobile DDR3 bypass (detailed in `RECLOCKING_NOTES.md` §11).
 - [ ] **Upstream Ingestion & Dual-Branch Tracking Workflow**:
   - Maintain an `upstream-tracking` branch mirroring upstream Linux `drivers/gpu/drm/nouveau`.
   - When upstream lands significant modern features (e.g. HDMI 2.1 for Blackwell, HDMI Deep Color, MST audio improvements), rebase the modular patch queue cleanly on top of the newer upstream snapshot.

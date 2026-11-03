@@ -15,6 +15,7 @@ This document is the unified hardware, kernel, and reverse-engineering reference
 8. [Resident Falcon Microcode Executor, S3 Recovery & PCIe Scaling (`v2.0.0`–`v2.1.0`)](#8-alternative-approaches-for-future-work)
 9. [Reverse Engineering Methodology & Multi-Architecture Scope (`390.157` via REA)](#9-reverse-engineering-the-nvidia-390157-proprietary-driver-via-rea-roadmap--research)
 10. [Concrete Reverse-Engineering Findings from `NVIDIA-Linux-x86_64-390.157` (`nv-modeset-kernel.o_binary` & `nv-kernel.o_binary`)](#10-concrete-reverse-engineering-findings-from-nvidia-390157-nv-modeset-kernelo_binary--nv-kernelo_binary)
+11. [Multi-Generation Architecture, Hardware Quirks & The Kepler/Maxwell 1 Hybrid Paradigm](#11-multi-generation-architecture-hardware-quirks--the-keplermaxwell-1-hybrid-paradigm)
 
 ---
 
@@ -1221,5 +1222,96 @@ Comparing the proprietary driver's open glue (`kernel/nvidia/nv.c`) + Resource M
 | **Proactive "Boost on Context/Swap" Triggers** | Userspace OpenGL (`libGLX_nvidia.so`) and VDPAU (`libvdpau_nvidia.so`) send an immediate `rm_ioctl` (`NV2080_CTRL_CMD_PERF_BOOST`) when a 3D context swaps buffers or creates a swapchain, jumping straight to `P0` (`0f`) *before* the 1 Hz timer even fires. | `nouveau-dynclockd` detects new DRM client contexts / IRQ bursts within `500 ms` (or immediately via `nouveau-ctrl` / per-app rules). |
 | **Downclock Hysteresis (Hold Timers)** | Uses multi-step hold-down timers (`~3–5 s` in `P0` $\to$ `~5–10 s` in `P8` $\to$ `P12`) so brief pauses between game frames or shader compiles never cause a jarring mid-game DDR3 reclock. | Configurable cooldown hysteresis in `nouveau-dynclockd` + thermal runaway protection (auto-steps down from `10` $\to$ `0f` if GPU temp $\ge 85\text{ }^\circ\text{C}$). |
 | **Hardware Constraints (`IMP` & Power Source)** | Automatically locks out `P12` (`03`) when `396.36 MHz` 120 Hz mode is active (`_nv002187kms`), and caps to `P8` (`07`) on battery power via ACPI `_PSR` notifications. | Supports `BATTERY_CAP` (`AC`/`BAT` sysfs awareness), `10` overclock state, and user-selectable manual override modes (`auto`, `p12`, `p8`, `p3`, `p0`, `oc`). |
+
+---
+
+## 11. Multi-Generation Architecture, Hardware Quirks & The Kepler/Maxwell 1 Hybrid Paradigm
+
+### 11.1 The Cross-Generation Hardware Spectrum
+
+Expanding `nouveau-dkms` across all pre-`Nova` NVIDIA architectures requires addressing four distinct silicon generations:
+
+| Generation | Chip Families | Firmware Security | Clock Control Mechanism | Primary Engineering Bottleneck |
+| :--- | :--- | :---: | :--- | :--- |
+| **Tesla (`NV50`–`NVA8`)** | `G80`–`GT218` | Unsigned | Legacy PLLs (`0x004xxx`) & PDAEMON | `G92`–`G94` memory/FIFO bus clock coupling; `GT215` host PLL lock delays |
+| **Fermi (`NVC0`–`NVCF`)** | `GF100`–`GF119` | Unsigned | PLLs (`0x137xxx`), MEMPLL (`0x132xxx`), PDAEMON (`0x10a000`) | Broken Tesla MEMX queue in upstream; VBIOS whole MHz rounding; GPC divider stickiness; GDDR5 write-buffer flush |
+| **Kepler (`NVE0`–`NV108`)** | `GK104`–`GK208` | Unsigned Falcon | 1:1 Core/Shader, GPU Boost 1.0/2.0 V/F curves | `ramgk104.c` hangs on mobile DDR3 (`GK107M`/`GK208M`) due to hardcoded GDDR5 link training |
+| **Maxwell 1 (`NV117`–`NV118`)** | `GM107`–`GM108` | **Unsigned Falcon!** | SMM clock domains, GPU Boost 2.0 | First-gen Maxwell has no signed PMU lockdown; supported in `390.157` |
+| **Maxwell 2 & Pascal** | `GM200`–`GP108` | **HS RSA-Signed PMU** | Signed PMU & ACR Falcon | Requires extracting and loading official signed PMU/ACR images |
+
+---
+
+### 11.2 The "Hybrid" Reclocking Paradigm on Kepler & Maxwell 1
+
+Community testing (e.g. user reports in Discussion #27) noted that Kepler and Maxwell 1 behave fundamentally differently from Tesla and Fermi under manual P-state selection:
+
+#### 1. Discrete P-State Ladder (Tesla & Fermi)
+On Tesla and Fermi, each P-state (`03`, `07`, `0a`, `0f`) programs a single invariant set of discrete clock frequencies. Writing `0f` locks core, shader, and memory to fixed values until software explicitly changes them.
+
+#### 2. Hybrid Boost Architecture (Kepler & Maxwell 1)
+Starting with Kepler, NVIDIA introduced **GPU Boost 1.0 and 2.0**:
+- The VBIOS BIT 'P' table no longer defines static P-state clock frequencies; it defines an interpolated **Voltage/Frequency (V/F) curve** between base clock ($f_{base}$) and maximum boost clock ($f_{boost}$).
+- **The Role of P-State `0f`**:
+  Selecting `0f` does not freeze the GPU at a single MHz value. Instead, `0f` sets the **performance envelope ceiling**, granting the hardware permission to dynamically scale across the V/F curve.
+- **Autonomous Micro-Stepping**:
+  Within the active envelope, the hardware PMU autonomously modulates core clock frequency based on temperature ($T_{GPU}$), current draw ($I_{rail}$), and load counters.
+- **Discrete Memory Reclocking**:
+  While the core scales continuously via Boost, memory clock (`mclk`) remains strictly discrete (switching between idle e.g. `324 MHz` and 3D e.g. `1250+ MHz`).
+
+#### 3. Implications for the `nouveau-dynclockd` Governor
+- On **Fermi**, `nouveau-dynclockd` is responsible for active frequency switching between `03`, `07`, `0a`, `0f`, and `10` because the silicon will not step autonomously.
+- On **Kepler and Maxwell 1**, the governor sets coarse power boundaries: clamping to `07` on battery power or 2D desktop use, and raising the cap to `0f` when 3D workloads launch, allowing hardware Boost to govern fine-grained fluctuations.
+
+---
+
+### 11.3 The Kepler Mobile DDR3 Memory Retraining Trap (`ramgk104.c`)
+
+A primary reason Kepler reclocking has remained unstable on laptops (`GK107M`, `GK208M`) in upstream Nouveau is that `nvkm/subdev/fb/ramgk104.c` was authored assuming desktop GDDR5 memory interfaces:
+- On GDDR5 boards, memory retraining executes link timing calibration sequences across all partitions.
+- On mobile Kepler systems equipped with DDR3 SDRAM, executing GDDR5 PHY training sequences causes an immediate memory bus deadlock.
+- **Resolution**:
+  Detect `ram->type == NOUVEAU_MEM_TYPE_DDR3` in `ramgk104.c` and execute DDR3 strapless DLL calibration matching NVIDIA `390.157`, bypassing GDDR5-specific link training.
+
+---
+
+### 11.4 The 4-Pillar Engineering Framework for Multi-Architecture Support
+
+```mermaid
+flowchart TD
+    subgraph TruthSources ["Hardware Ground Truth Sources"]
+        VBIOS["VBIOS BIT Tables (P, M, C, d)<br/>ROM dumps in vbios_database/"]
+        Traces["mmiotrace & Hardware Telemetry<br/>(tools/run-mmiotrace.sh)"]
+        Blob["NVIDIA Binary Disassembly<br/>(390.157 & 340.108 via REA/Ghidra)"]
+    end
+
+    subgraph Framework ["Unified Driver Engine"]
+        Quirks["Subsystem Quirk Registry (quirks.h)<br/>PCI Subsystem IDs + RAM Types"]
+        Compat["Multi-Kernel Shims (nouveau_compat.h)<br/>Linux 6.18 LTS - 7.3+"]
+    end
+
+    subgraph Modules ["Generation Subdev Modules"]
+        M_Tesla["0040: Tesla (clk/gt215.c, fb/ramgt215.c)"]
+        M_Fermi["0010: Fermi (clk/gf100.c, fb/ramgf100.c)"]
+        M_Kepler["0020: Kepler (clk/gk104.c, fb/ramgk104.c)"]
+        M_Max1["0030: Maxwell 1 (clk/gm107.c, pmu/gm107.c)"]
+    end
+
+    VBIOS --> Quirks
+    Traces --> Quirks
+    Blob --> Quirks
+
+    Quirks --> Modules
+    Compat --> Modules
+```
+
+1. **Subsystem Quirk Registry (`quirks.h`)**:
+   Centralizes board-specific behavior by OEM Subsystem ID (e.g. Dell `1028:04b7`, Gigabyte `1458:3515`, ThinkPad `17aa:2145`) and RAM type (`NOUVEAU_MEM_TYPE_DDR3` vs. `GDDR5`).
+2. **VBIOS BIT Decoding as Single Source of Truth**:
+   Extracts factory-validated clock limits, voltage curves, and memory timings from BIT tables 'P', 'M', and 'C' directly from flash ROM.
+3. **Differential Register Sniffing (`mmiotrace`)**:
+   Traces official driver transitions to isolate missing PHY commit strobes, partition write-buffer flushes, and PLL lock sequences.
+4. **Strict Modular Patch Isolation**:
+   Maintains generation code in dedicated subdev files (`clk/gf100.c` vs `clk/gk104.c` vs `clk/gm107.c`), ensuring changes to one generation never regress another.
+
 
 

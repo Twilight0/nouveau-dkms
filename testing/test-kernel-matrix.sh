@@ -169,17 +169,10 @@ run_compile_kdir() {
         llvm_arg=("LLVM=1")
     fi
 
-    log_info "Stage 3: Compiling nouveau.ko against kernel ${kver} (${kdir}) ${llvm_arg[*]:-[GCC]}..."
+    log_info "Stage 3: Compiling nouveau.ko [${TARGET_GEN}] against kernel ${kver} (${kdir}) ${llvm_arg[*]:-[GCC]}..."
     local build_src="${WORK_DIR}/build-${kver}"
     mkdir -p "${build_src}"
-    tar -xzf "${REPO_ROOT}/nouveau-source.tar.gz" -C "${build_src}"
-
-    while IFS= read -r line || [[ -n "${line}" ]]; do
-        line="${line%%#*}"
-        line="$(echo "${line}" | xargs)"
-        [[ -z "${line}" ]] && continue
-        patch -Np1 -s -d "${build_src}/nouveau-source" < "${REPO_ROOT}/patches/${line}"
-    done < "${REPO_ROOT}/patches/series"
+    python3 "${REPO_ROOT}/tools/nouveau-matrix-builder.py" build-tree "${TARGET_GEN}" -o "${build_src}/nouveau-source" -f
 
     make -j"$(nproc)" -C "${kdir}" M="${build_src}/nouveau-source" \
         "${llvm_arg[@]}" CONFIG_DRM_NOUVEAU=m modules
@@ -210,10 +203,13 @@ run_compile_kdir() {
 DO_SERIES=0
 DO_UPSTREAM=0
 DO_INSTALLED=0
+DO_ISOLATION=0
+TARGET_GEN="all"
 COMPILE_KDIRS=()
 
 if [[ $# -eq 0 ]]; then
     DO_SERIES=1
+    DO_ISOLATION=1
     DO_UPSTREAM=1
     DO_INSTALLED=1
 else
@@ -222,6 +218,14 @@ else
             --check-series)
                 DO_SERIES=1
                 shift
+                ;;
+            --check-isolation)
+                DO_ISOLATION=1
+                shift
+                ;;
+            --generation)
+                TARGET_GEN="$2"
+                shift 2
                 ;;
             --upstream-matrix)
                 DO_UPSTREAM=1
@@ -244,6 +248,12 @@ else
 fi
 
 [[ "${DO_SERIES}" -eq 1 ]] && run_check_series
+
+if [[ "${DO_ISOLATION}" -eq 1 ]]; then
+    log_info "Verifying architectural chip generation isolation..."
+    python3 "${REPO_ROOT}/tools/nouveau-matrix-builder.py" check-isolation
+fi
+
 [[ "${DO_UPSTREAM}" -eq 1 ]] && run_upstream_matrix
 
 if [[ "${DO_INSTALLED}" -eq 1 ]]; then

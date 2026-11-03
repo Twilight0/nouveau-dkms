@@ -26,7 +26,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          bash testing/test-kernel-matrix.sh --check-series --upstream-matrix
+          bash testing/test-kernel-matrix.sh --check-series --check-isolation --upstream-matrix
 
   dkms-compile-matrix:
     name: Build nouveau.ko (${{ matrix.label }})
