@@ -100,13 +100,13 @@ fetch_upstream_file() {
     fi
     mkdir -p "$(dirname "${dest}")"
 
-    local url="https://raw.githubusercontent.com/torvalds/linux/${tag}/drivers/gpu/drm/nouveau/${relpath}"
-    if [[ -n "${GITHUB_TOKEN:-}" ]]; then
-        if curl -fsSL -H "Authorization: Bearer ${GITHUB_TOKEN}" "${url}" -o "${dest}" 2>/dev/null; then
-            return 0
-        fi
+    local raw_url="https://raw.githubusercontent.com/torvalds/linux/${tag}/drivers/gpu/drm/nouveau/${relpath}"
+    local korg_url="https://git.kernel.org/pub/scm/linux/kernel/git/torvalds/linux.git/plain/drivers/gpu/drm/nouveau/${relpath}?h=${tag}"
+
+    if curl -fsSL --retry 3 --retry-delay 1 "${raw_url}" -o "${dest}" 2>/dev/null; then
+        return 0
     fi
-    if curl -fsSL "${url}" -o "${dest}" 2>/dev/null; then
+    if curl -fsSL --retry 3 --retry-delay 1 "${korg_url}" -o "${dest}" 2>/dev/null; then
         return 0
     fi
     if command -v gh >/dev/null 2>&1; then
