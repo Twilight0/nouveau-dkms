@@ -33,36 +33,46 @@ jobs:
     needs: patch-portability
     runs-on: ubuntu-latest
     container:
-      image: archlinux:base-devel
+      image: ${{ matrix.image }}
     strategy:
       fail-fast: false
       matrix:
         include:
           - label: "Arch linux-lts (6.18 LTS / GCC)"
-            flavor: "arch-lts"
-            pkgs: "linux-lts-headers kmod pahole bc python"
+            image: "archlinux:base-devel"
+            cmd: "pacman -Syu --noconfirm linux-lts-headers kmod pahole bc python"
           - label: "Arch linux (7.2+ Mainline / GCC)"
-            flavor: "arch-mainline"
-            pkgs: "linux-headers kmod pahole bc python"
+            image: "archlinux:base-devel"
+            cmd: "pacman -Syu --noconfirm linux-headers kmod pahole bc python"
           - label: "CachyOS linux-cachyos (7.3+ / Clang LLVM=1)"
-            flavor: "cachyos-clang"
-            pkgs: "clang llvm lld kmod pahole bc python zstd curl"
+            image: "archlinux:base-devel"
+            cmd: |
+              pacman -Syu --noconfirm clang llvm lld kmod pahole bc python zstd curl
+              MIRROR_URL="https://geo-mirror.chaotic.cx/chaotic-aur/x86_64"
+              HDR_PKG="$(curl -fsSL "${MIRROR_URL}/" | grep -oE 'linux-cachyos-headers-[0-9][^"]+\.pkg\.tar\.zst' | grep -v '\.sig$' | sort -V | tail -n1)"
+              echo "Downloading ${HDR_PKG}..."
+              curl -fsSL "${MIRROR_URL}/${HDR_PKG}" -o "/tmp/${HDR_PKG}"
+              pacman -Udd --noconfirm "/tmp/${HDR_PKG}"
+              rm -f "/tmp/${HDR_PKG}"
+          - label: "Fedora latest (kernel-devel / GCC)"
+            image: "fedora:latest"
+            cmd: "dnf install -y kernel-devel gcc make diffutils patch python3 tar elfutils-libelf-devel bc bison flex kmod findutils"
+          - label: "Ubuntu latest (linux-headers-generic / GCC)"
+            image: "ubuntu:rolling"
+            cmd: "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential linux-headers-generic kmod bc bison flex python3 libelf-dev libssl-dev patch"
+          - label: "Debian Testing (linux-headers-amd64 / GCC)"
+            image: "debian:testing"
+            cmd: "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential linux-headers-amd64 kmod bc bison flex python3 libelf-dev libssl-dev patch"
+          - label: "openSUSE Tumbleweed (kernel-default-devel / GCC)"
+            image: "opensuse/tumbleweed:latest"
+            cmd: "zypper --non-interactive install --no-recommends kernel-default-devel gcc make diffutils patch python3 tar elfutils-libelf-devel bc bison flex kmod findutils gawk"
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Install toolchain and kernel headers
         run: |
-          pacman -Syu --noconfirm ${{ matrix.pkgs }}
-          if [[ "${{ matrix.flavor }}" == "cachyos-clang" ]]; then
-            # Fetch latest linux-cachyos-headers from CachyOS / Chaotic-AUR mirror
-            MIRROR_URL="https://geo-mirror.chaotic.cx/chaotic-aur/x86_64"
-            HDR_PKG="$(curl -fsSL "${MIRROR_URL}/" | grep -oE 'linux-cachyos-headers-[0-9][^"]+\.pkg\.tar\.zst' | grep -v '\.sig$' | sort -V | tail -n1)"
-            echo "Downloading ${HDR_PKG}..."
-            curl -fsSL "${MIRROR_URL}/${HDR_PKG}" -o "/tmp/${HDR_PKG}"
-            pacman -Udd --noconfirm "/tmp/${HDR_PKG}"
-            rm -f "/tmp/${HDR_PKG}"
-          fi
+          ${{ matrix.cmd }}
 
       - name: Compile nouveau.ko against target kernel headers
         run: |

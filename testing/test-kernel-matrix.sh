@@ -163,7 +163,14 @@ run_compile_kdir() {
     fi
 
     local kver
-    kver="$(make -s -C "${kdir}" kernelrelease 2>/dev/null || basename "$(dirname "${kdir}")")"
+    kver="$(make -s -C "${kdir}" kernelrelease 2>/dev/null || true)"
+    if [[ -z "${kver}" ]]; then
+        if [[ "$(basename "${kdir}")" == "build" ]]; then
+            kver="$(basename "$(dirname "${kdir}")")"
+        else
+            kver="$(basename "${kdir}")"
+        fi
+    fi
     local llvm_arg=()
     if [[ -f "${kdir}/.config" ]] && grep -q '^CONFIG_CC_IS_CLANG=y' "${kdir}/.config"; then
         llvm_arg=("LLVM=1")
@@ -259,9 +266,18 @@ fi
 [[ "${DO_UPSTREAM}" -eq 1 ]] && run_upstream_matrix
 
 if [[ "${DO_INSTALLED}" -eq 1 ]]; then
-    for kdir in /usr/lib/modules/*/build; do
-        [[ -d "${kdir}" ]] && COMPILE_KDIRS+=("${kdir}")
+    candidate_dirs=()
+    for d in /usr/lib/modules/*/build /lib/modules/*/build /usr/src/kernels/* /usr/src/linux-obj/*/*/ /usr/src/linux-headers-*; do
+        if [[ -d "${d}" && -f "${d}/Makefile" ]]; then
+            real_d="$(cd "${d}" && pwd -P)"
+            candidate_dirs+=("${real_d}")
+        fi
     done
+    if [[ ${#candidate_dirs[@]} -gt 0 ]]; then
+        while IFS= read -r kdir; do
+            [[ -n "${kdir}" ]] && COMPILE_KDIRS+=("${kdir}")
+        done < <(printf '%s\n' "${candidate_dirs[@]}" | sort -u)
+    fi
 fi
 
 for kdir in "${COMPILE_KDIRS[@]}"; do

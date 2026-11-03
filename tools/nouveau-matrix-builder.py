@@ -360,7 +360,22 @@ def cmd_build_tree(args):
 
 def detect_kernel_build_dirs():
     """Finds available kernel build header directories on the local machine."""
-    dirs = [Path(p) for p in glob.glob("/usr/lib/modules/*/build") if os.path.isdir(p)]
+    patterns = [
+        "/usr/lib/modules/*/build",
+        "/lib/modules/*/build",
+        "/usr/src/kernels/*",
+        "/usr/src/linux-obj/*/*/",
+        "/usr/src/linux-headers-*",
+    ]
+    seen = set()
+    dirs = []
+    for pat in patterns:
+        for p in glob.glob(pat):
+            if os.path.isdir(p) and os.path.isfile(os.path.join(p, "Makefile")):
+                real_p = os.path.realpath(p)
+                if real_p not in seen:
+                    seen.add(real_p)
+                    dirs.append(Path(real_p))
     return sorted(dirs)
 
 def compile_source_tree(source_dir: Path, kdir: Path):
@@ -466,7 +481,7 @@ def cmd_test_matrix(args):
                     break
                     
             for kd in kdirs:
-                kver = kd.parent.name
+                kver = kd.parent.name if kd.name == "build" else kd.name
                 if not patch_ok:
                     matrix_results.append({
                         "generation": gen,
