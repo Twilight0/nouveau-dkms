@@ -2,7 +2,7 @@
 diff -ruN a/nouveau_compat.h b/nouveau_compat.h
 --- a/nouveau_compat.h	1970-01-01 00:00:00.000000000 +0000
 +++ b/nouveau_compat.h	2026-11-02 19:30:00.000000000 +0200
-@@ -0,0 +1,75 @@
+@@ -0,0 +1,77 @@
 +/* SPDX-License-Identifier: MIT */
 +#ifndef __NOUVEAU_COMPAT_H__
 +#define __NOUVEAU_COMPAT_H__
@@ -73,8 +73,10 @@ diff -ruN a/nouveau_compat.h b/nouveau_compat.h
 +/*
 + * Linux 7.3+ compatibility shims
 + */
++#if LINUX_VERSION_CODE >= KERNEL_VERSION(7, 3, 0)
 +#ifndef DRIVER_GEM_GPUVA
 +#define DRIVER_GEM_GPUVA 0
++#endif
 +#endif
 +
 +#endif /* __NOUVEAU_COMPAT_H__ */
