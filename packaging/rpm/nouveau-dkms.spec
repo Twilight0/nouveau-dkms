@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.3.0
+Version:        2.3.1
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -56,6 +56,11 @@ fi
 %config(noreplace) %{_sysconfdir}/modprobe.d/nouveau.conf
 
 %changelog
+* Tue Nov 03 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.1-1
+- Release v2.3.1: Fix DRIVER_GEM_GPUVA compatibility shim for Linux kernels >= 7.3.
+- Prevent DRIVER_GEM_GPUVA definition omission on kernels < 7.3 to avoid boot crash.
+- Synchronize packaging and prebuilt modules across AUR and AliveOS repository.
+
 * Mon Nov 02 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.0-1
 - Release v2.3.0: Multi-kernel support (Linux 6.18 through 7.3) & modular patch queue.
 - Centralized multi-kernel compatibility layer (nouveau_compat.h).

@@ -4,6 +4,60 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.3.1] - 2026-11-03
+
+### Bug Fixes
+- **Guard DRIVER_GEM_GPUVA compatibility shim for Linux kernels >= 7.3**:
+  - On Linux kernels < 7.3, `DRIVER_GEM_GPUVA` is defined as an enum value rather than a preprocessor macro. Defining it as `0` in `nouveau_compat.h` caused `driver_features` in `nouveau_drm.c` to omit `DRIVER_GEM_GPUVA`, skipping `drm_gem_gpuva_init` and triggering a kernel oops in `drm_gpuvm_bo_evict` during buffer migration/eviction.
+  - Fixes desktop failing to load or freezing on boot on Linux 6.18 through 7.2.
+- **Packaging and Repository Updates**:
+  - Synchronized prebuilt modules and DKMS packaging across Arch User Repository (AUR) and AliveOS repository.
+
+---
+
+## [2.3.0] - 2026-11-02
+
+### Multi-Kernel Support & Infrastructure
+- **Universal Linux Kernel Support (6.18 LTS through 7.3)**:
+  - Centralized multi-kernel compatibility layer in `nouveau_compat.h`.
+  - Full out-of-tree DKMS support across Linux 6.18 LTS (XanMod, CachyOS, upstream), Linux 7.2 Arch, and Linux 7.3 with Clang/LLVM=1.
+  - Version-guarded compatibility shims for `drm_client` API, atomic mode setting, and GPUVA features.
+- **Modularized Patch Queue**:
+  - Reorganized the patch stack into numbered modular series (`patches/series`) separating universal compatibility shims from architecture-specific reclocking logic.
+  - Automated monolithic `nouveau.patch` regeneration via Makefile.
+- **Cross-Distro Packaging & CI**:
+  - Added GitHub Actions multi-kernel CI matrix with automated build and packaging for Arch Linux (`.pkg.tar.zst`), Debian/Ubuntu (`.deb`), and Fedora/RHEL (`.rpm`).
+
+---
+
+## [2.2.3] - 2026-10-27
+
+### VBlank Sync Guarantee
+- **Zero-Tear VBlank Leading Edge Guarantee**:
+  - Disallow mid-VBlank reclocking starts to prevent raster scan overrun into active picture.
+  - Always synchronize reclocking to the true leading edge (`vpos` approach zone), ensuring complete execution inside blanking.
+
+---
+
+## [2.2.2] - 2026-10-26
+
+### Stability & Memory Alignment
+- **256-Byte Render Target Base Alignment**:
+  - Enforce 256-byte hardware alignment in `nouveau_bo.c` and `nouveau_gem.c` for Fermi+ color targets.
+  - Eliminate `PGRAPH DATA_ERROR 00000004 [INVALID_VALUE]` on method `0x0804`.
+  - Restore solid upstream engine reset for graceful client recovery.
+
+---
+
+## [2.2.1] - 2026-10-26
+
+### Packaging & Code Separation
+- **Decouple Userspace Utilities**:
+  - Separated userspace governor daemon, CLI, and TUI into standalone `nouveau-utils`.
+  - Kernel module package now cleanly recommends `nouveau-utils`.
+
+---
+
 ## [2.2.0] - 2026-10-25
 
 ### ✨ Zero-Stutter VBlank-Onset Memory Reclocking (`ramgf100.c`)
