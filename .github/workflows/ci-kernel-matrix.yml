@@ -152,7 +152,7 @@ jobs:
         run: |
           rpmdev-setuptree
           cp packaging/rpm/nouveau-dkms.spec ~/rpmbuild/SPECS/
-          cp nouveau-source.tar.gz nouveau.patch dkms.conf nouveau.conf \
+          cp nouveau-source.tar.gz nouveau.patch dkms.conf nouveau.conf nouveau-load.conf \
              ~/rpmbuild/SOURCES/
           rpmbuild -ba ~/rpmbuild/SPECS/nouveau-dkms.spec
           mkdir -p dist/rpm
