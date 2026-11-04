@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.3.2
+Version:        2.3.3
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -8,6 +8,7 @@ Source0:        nouveau-source.tar.gz
 Source1:        nouveau.patch
 Source2:        dkms.conf
 Source3:        nouveau.conf
+Source4:        nouveau-load.conf
 
 BuildArch:      noarch
 Requires:       dkms >= 2.1.0.0
@@ -36,8 +37,9 @@ mkdir -p %{buildroot}%{_usrsrc}/%{name}-%{version}
 cp -r nouveau-source/* %{buildroot}%{_usrsrc}/%{name}-%{version}/
 install -Dm644 dkms.conf %{buildroot}%{_usrsrc}/%{name}-%{version}/dkms.conf
 
-# Configuration file
+# Configuration files
 install -Dm644 %{SOURCE3} %{buildroot}%{_sysconfdir}/modprobe.d/nouveau.conf
+install -Dm644 %{SOURCE4} %{buildroot}%{_prefix}/lib/modules-load.d/nouveau.conf
 
 %post
 if [ $1 -eq 1 ]; then
@@ -54,8 +56,13 @@ fi
 %files
 %{_usrsrc}/%{name}-%{version}
 %config(noreplace) %{_sysconfdir}/modprobe.d/nouveau.conf
+%{_prefix}/lib/modules-load.d/nouveau.conf
 
 %changelog
+* Wed Nov 04 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.3-1
+- Release v2.3.3: Early module loading configuration for Plymouth and KMS.
+- Install nouveau.conf to /usr/lib/modules-load.d/ for early KMS and Plymouth initialization.
+
 * Tue Nov 03 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.2-1
 - Release v2.3.2: Fix Linux 7.2+ workqueue affinity and Plymouth boot hangs.
 - Guard experimental Fermi PMU diagnostic self-tests behind NvFermiDiag option.

@@ -4,6 +4,16 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.3.3] - 2026-11-04
+
+### Features & Packaging
+- **Early Module Loading Configuration for Plymouth and Initramfs-less Systems**:
+  - Added `/usr/lib/modules-load.d/nouveau.conf` to automatically request synchronous loading of `nouveau` during early boot.
+  - Ensures early Kernel Mode Setting (KMS) and frame buffer initialization are completed before Plymouth splash screens attempt display setup on systems without an initramfs, preventing delayed splash displays or skipped boot animations.
+  - Updated packaging across Arch Linux (`PKGBUILD`), Debian/Ubuntu (`packaging/debian/rules`), and Fedora/RHEL (`packaging/rpm/nouveau-dkms.spec`).
+
+---
+
 ## [2.3.2] - 2026-11-03
 
 ### Bug Fixes

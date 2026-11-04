@@ -1,3 +1,11 @@
+nouveau-dkms (2.3.3-1) unstable; urgency=medium
+
+  * Release v2.3.3: Early module loading configuration for Plymouth and KMS.
+  * Install nouveau.conf to /usr/lib/modules-load.d/ to ensure early module
+    loading on systems without initramfs and prompt Plymouth splash initialization.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Wed, 04 Nov 2026 16:20:00 +0200
+
 nouveau-dkms (2.3.2-1) unstable; urgency=medium
 
   * Release v2.3.2: Fix Linux 7.2+ workqueue affinity and Plymouth boot hangs.

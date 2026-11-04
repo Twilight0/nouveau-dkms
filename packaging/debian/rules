@@ -17,6 +17,7 @@ override_dh_auto_install:
 	install -d debian/nouveau-dkms/usr/src/nouveau-dkms-$(VERSION)
 	cp -r build/nouveau-dkms-$(VERSION)/* debian/nouveau-dkms/usr/src/nouveau-dkms-$(VERSION)/
 	install -Dm644 nouveau.conf debian/nouveau-dkms/etc/modprobe.d/nouveau.conf
+	install -Dm644 nouveau-load.conf debian/nouveau-dkms/usr/lib/modules-load.d/nouveau.conf
 
 override_dh_clean:
 	dh_clean

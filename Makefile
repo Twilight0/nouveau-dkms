@@ -1,4 +1,4 @@
-VERSION ?= 2.3.2
+VERSION ?= 2.3.3
 PKGNAME ?= nouveau-dkms
 DESTDIR ?=
 PREFIX ?= /usr
@@ -51,8 +51,9 @@ install: src-prep
 	install -d $(DESTDIR)$(PREFIX)/src/$(PKGNAME)-$(VERSION)
 	cp -r build/$(PKGNAME)-$(VERSION)/* $(DESTDIR)$(PREFIX)/src/$(PKGNAME)-$(VERSION)/
 	
-	# Modprobe configuration
+	# Modprobe and early module load configuration
 	install -Dm644 nouveau.conf $(DESTDIR)/etc/modprobe.d/nouveau.conf
+	install -Dm644 nouveau-load.conf $(DESTDIR)/usr/lib/modules-load.d/nouveau.conf
 
 clean:
 	rm -rf build/ *.pkg.tar.zst *.deb *.rpm
