@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.3.3
+Version:        2.3.4
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -59,6 +59,9 @@ fi
 %{_prefix}/lib/modules-load.d/nouveau.conf
 
 %changelog
+* Sun Nov 22 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.4-1
+- Release v2.3.4: Fix 120 Hz VBlank reclock synchronization in gf100_ram_wait_vblank.
+
 * Wed Nov 04 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.3-1
 - Release v2.3.3: Early module loading configuration for Plymouth and KMS.
 - Install nouveau.conf to /usr/lib/modules-load.d/ for early KMS and Plymouth initialization.

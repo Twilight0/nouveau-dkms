@@ -4,6 +4,16 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.3.4] - 2026-11-22
+
+### Bug Fixes
+- **Fermi 120 Hz VBlank Reclock Synchronization (`gf100_ram_wait_vblank`)**:
+  - Widened the pre-VBlank tight-poll approach zone from 40 to 160 active lines (`~1.17 ms` at 120 Hz) and increased the tight-poll loop cap to 2500 iterations so `usleep_range(80, 150)` cannot oversleep past VBlank onset and trigger mid-frame transitions (`vpos 319 -> 393`).
+  - Handled wakeups that land directly at the start of VBlank (`vpos < 0 && vpos <= -(vblank_lines - 6)`) instead of skipping to the next frame.
+  - Adjusted the trigger threshold from `vdisplay - 2` to `vdisplay - 10` (`~73 us` before VBlank onset at 120 Hz) so the `~530 us` `324 -> 900 MHz` transition and `0x001548` PHY commit latch complete inside 120 Hz's `466.3 us` VBlank window (`vpos 1069 -> -1`) without spilling into active scanout or causing frame stutter.
+
+---
+
 ## [2.3.3] - 2026-11-04
 
 ### Features & Packaging
@@ -82,7 +92,7 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ## [2.2.0] - 2026-10-25
 
-### ✨ Zero-Stutter VBlank-Onset Memory Reclocking (`ramgf100.c`)
+### Zero-Stutter VBlank-Onset Memory Reclocking (`ramgf100.c`)
 - **True NV50/GF100 Signed `vpos` VBlank Onset Sync (`gf100_ram_calc_vpos` / `gf100_ram_wait_vblank`)**:
   - Fixed the hardware scanline coordinate bias where NV50/GF100 `rgpos` (`0x616340`) counts `0` from VSync onset (`0..vblanke` is VSync + Back Porch, `vblanke+1..vblanks-1` is Active Scanout, and `vblanks..vtotal-1` is the 5-line Front Porch).
   - Previously, checking only `vline >= vblanks && vline < vtotal` missed 90% of VBlank and timed out after 50 ms during `usleep_range(200, 500)`, firing DRAM retraining mid-frame.
@@ -92,7 +102,7 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 - **Boot-Time Resident Falcon Pre-Warm (`gf100_ram_calc_ddr3`)**:
   - Pre-warms the 896-word resident Falcon microcode executor (`fexec_code.inc`) during initial 324 MHz boot initialization so the very first `07` $\leftrightarrow$ `0f` transition executes on the sub-millisecond resident fast-path without a cold PDAEMON reset.
 
-### 🛡️ Governor Modernization & Zero-Sudo Telemetry (`nouveau-dynclockd` 2.0, `nouveau-ctrl`, `nouveau-tui`)
+### ️ Governor Modernization & Zero-Sudo Telemetry (`nouveau-dynclockd` 2.0, `nouveau-ctrl`, `nouveau-tui`)
 - **120 Hz Display Floor Guard (`DISPLAY_120HZ_FLOOR=true`)**:
   - Automatically detects active DRM CRTC modes via `libdrm.so.2`. When a high-refresh or high-dot-clock display (>135 MHz pixel clock, e.g. 1920x1080 @ 120 Hz) is active, clamps `idle_floor` to `07` (202/324 MHz), matching NVIDIA `390.157` IMP checks (`_nv002187kms`). Drops to `03` only at low pixel clocks or when DPMS is blanked.
 - **Per-Application Profile Engine (`/etc/nouveau-dynclockd.d/*.conf`)**:
@@ -109,29 +119,29 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ## [2.1.0] - 2026-10-04
 
-### 🔧 Kernel 6.18.55 Rebase & Compatibility
+### Kernel 6.18.55 Rebase & Compatibility
 - **DRM client API compat (`nouveau_display.c`)**: version-guarded `drm_client_dev_suspend/resume` calls (1-arg on `>=6.18.55`, 2-arg before), tracking upstream `7910d69376`. Builds clean on both `6.18.52` and `6.18.55` headers.
 - **Audited 6.18.53–55 nouveau changes**: only the client API breaks the build; remaining stable backports are logic fixes, not ported in this minimal rebase.
 
-### 📊 Live VRAM Telemetry (exact, not estimated)
+### Live VRAM Telemetry (exact, not estimated)
 - **In-kernel accounting (`nouveau_debugfs.c`)**: new `VRAM: <used> MiB / <total> MiB used` line on the `pstate` node from the TTM VRAM manager (`ttm_resource_manager_usage`) and `ram_user`. Replaces the `gpuva` estimate, which stays empty on pre-UVMM Fermi.
 - **Unprivileged access without udev**: the governor (root) publishes `/run/nouveau/vram` (`0644`, 15 s freshness guard); `nouveau-ctrl status` and `nouveau-tui` prefer it, fall back to direct debugfs (root). Live-verified as user.
 
-### 🔋 Governor Battery Awareness
+### Governor Battery Awareness
 - New `BATTERY_CAP=true` option (`/etc/nouveau-dynclockd.conf`): caps max state to `07` (P8) on DC power, matching proprietary `390.157`; full `0f` on AC. Power source shown in `status`/`tui`. Code-complete, field verification pending.
 
-### ✨ VBlank-Aligned Memory Reclock (first iteration)
+### VBlank-Aligned Memory Reclock (first iteration)
 - New `gf100_ram_wait_vblank()` in `ramgf100.c`: starts the ~5 ms Falcon retraining at blanking onset (NV50 `rgpos 0x616340`, `NvFermiVblankSync=1` default, fail-open 50 ms timeout) so the pause lands on blanking + top lines instead of mid-frame. Full zero-pause remains a TODO. Field verification pending.
 
 ---
 
 ## [2.0.1] - 2026-09-19
 
-### 🐛 Bug Fix: S3 Suspend / Resume Resident Executor Self-Healing
+### Bug Fix: S3 Suspend / Resume Resident Executor Self-Healing
 
 This release resolves a critical GPU clock freeze occurring after resuming from system suspend (S3 sleep), where the GPU clock remained locked at P-State `07` (202 MHz core / 324 MHz memory) and refused to scale to higher performance states.
 
-#### 🧠 Kernel Module (`ramgf100.c`)
+#### Kernel Module (`ramgf100.c`)
 - **Zero-Overhead S3 Resume Handshake Signature Detection**:
   - Across system suspend/resume or Falcon hardware resets, PMU IMEM is cleared and `SCRATCH0` (`0x10a080`) drops to `0x00000000`.
   - The driver now verifies the resident microcode handshake signature (`0xE1EC0001`) before submitting fast-path mailbox commands.
@@ -145,11 +155,11 @@ This release resolves a critical GPU clock freeze occurring after resuming from 
 
 ## [2.0.0] - 2026-09-18
 
-### 🚀 Major Milestone: Full Bidirectional DDR3 Memory Reclocking & Telemetry Suite
+### Major Milestone: Full Bidirectional DDR3 Memory Reclocking & Telemetry Suite
 
 This major release achieves the long-sought milestone of fully working, bidirectional DDR3 memory reclocking (`324 MHz` ↔ `900 MHz`) on NVIDIA Fermi (GF100–GF119) GPUs under Linux, paired with a flicker-free two-stage dynamic governor and a comprehensive telemetry management suite.
 
-#### 🧠 Kernel Module & Custom Falcon Executor Engine
+#### Kernel Module & Custom Falcon Executor Engine
 - **Custom Resident Falcon Microcode Executor (`ramgf100.c` / `gf100.fuc3`)**:
   - Completely bypasses the legacy Tesla-era PMU MEMX queue interface (`gt215_pmu_send`) that previously failed on Fermi with PRIVRING hardware faults.
   - Implements a dedicated resident microcode loop (`resident_idle`) polling `SCRATCH1` (`0x10a084`), executing bidirectional memory reclocking in sub-millisecond fast-path via MMIO mailboxes.
@@ -162,7 +172,7 @@ This major release achieves the long-sought milestone of fully working, bidirect
 - **Native 120 Hz eDP Display Support**:
   - Enables continuous VBlank pacing (`vblank_continuous=1`) and 6 bpc color clamp for full 119.97 Hz refresh on internal laptop panels.
 
-#### ⚡ Dynamic Frequency Governor (`nouveau-dynclockd`)
+#### Dynamic Frequency Governor (`nouveau-dynclockd`)
 - **Flicker-Free Two-Stage Scaling**:
   - **Stage 1 (Desktop / Browser / UI)**: Dynamically scales core/shader between `03` (50 MHz) and `07` (202 MHz) while clamping memory at `324 MHz`. Transitions occur without DRAM retiming or scanout delay, achieving **100% flicker-free operation at 120 Hz**.
   - **Stage 2 (Dedicated 3D Graphics)**: Automatically boosts to `0f` (`590 MHz` core / `1180 MHz` shader / `900 MHz` memory @ 1.030 V) when dedicated 3D games, emulators, or benchmarks are launched.
@@ -173,7 +183,7 @@ This major release achieves the long-sought milestone of fully working, bidirect
 - **Low-Power Startup**:
   - Immediately forces low-power idle state `03` upon service startup and boot.
 
-#### 🎮 Management & Telemetry Utilities (`nouveau-ctrl` & `nouveau-tui`)
+#### Management & Telemetry Utilities (`nouveau-ctrl` & `nouveau-tui`)
 - **Hardware Telemetry Integration**:
   - **Dell SMM Fan Speed**: Real-time RPM reading via platform hardware monitor (`dell_smm fan1_input`).
   - **PCIe Link Telemetry**: Real-time PCIe generation and lane width status (`2.5 GT/s Gen1 x16 [Max: 5.0 GT/s Gen2 x16]`).
@@ -183,7 +193,7 @@ This major release achieves the long-sought milestone of fully working, bidirect
     - TUI: Press `t` to type a limit, or `[` / `]` to adjust interactively in Tab 1.
   - Clean display: Removed all legacy "(target: ...)" references.
 
-#### 🛠️ Reproducible Workflow Tools (`tools/`)
+#### ️ Reproducible Workflow Tools (`tools/`)
 - `tools/nouveau-fermi-diag.py`: Standalone diagnostic tool dumping PCI IDs, VBIOS BIT tables (`P`, `M`, `U`, `C`), MMIO registers, and DRM clients.
 - `tools/sniff-memory-reclock.py`: Direct BAR0 memory controller (PFB) and PHY DLL register delta sniffer.
 - `tools/run-mmiotrace.sh`: Automated kernel MMIO tracing script for proprietary 390.xx driver analysis.

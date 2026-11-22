@@ -1,3 +1,10 @@
+nouveau-dkms (2.3.4-1) unstable; urgency=medium
+
+  * Release v2.3.4: Fix 120 Hz VBlank reclock synchronization in gf100_ram_wait_vblank
+    to prevent active-scanout overshoots and frame stutter during DDR3 clock switches.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Sun, 22 Nov 2026 10:45:00 +0200
+
 nouveau-dkms (2.3.3-1) unstable; urgency=medium
 
   * Release v2.3.3: Early module loading configuration for Plymouth and KMS.
