@@ -1,12 +1,17 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-VERSION="2.3.0"
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+VERSION="$(sed -n 's/^nouveau-dkms (\([^-)]*\)-.*/\1/p' "${REPO_ROOT}/packaging/debian/changelog" | head -n1)"
+if [ -z "${VERSION}" ]; then
+    echo "Error: failed to determine package version from packaging/debian/changelog" >&2
+    exit 1
+fi
+
 PKGNAME="nouveau-dkms"
 ARCH="all"
 DEB_NAME="${PKGNAME}_${VERSION}-1_${ARCH}.deb"
 
-REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 WORK_DIR="$(mktemp -d /tmp/deb_build.XXXXXX)"
 trap 'rm -rf "$WORK_DIR"' EXIT
 
@@ -16,7 +21,7 @@ echo "[*] Building Debian package: ${DEB_NAME}"
 DATA_DIR="${WORK_DIR}/data"
 mkdir -p "${DATA_DIR}"
 
-make -C "${REPO_ROOT}" install DESTDIR="${DATA_DIR}" PREFIX=/usr
+make -C "${REPO_ROOT}" install DESTDIR="${DATA_DIR}" PREFIX=/usr VERSION="${VERSION}"
 
 # 2. Prepare control directory
 CONTROL_DIR="${WORK_DIR}/control"
@@ -44,8 +49,8 @@ Description: Nouveau out-of-tree DRM module with dynamic Fermi reclocking (DKMS)
  and the nouveau-dynclockd background governor.
 EOF
 
-cp "${REPO_ROOT}/packaging/debian/nouveau-dkms.postinst" "${CONTROL_DIR}/postinst"
-cp "${REPO_ROOT}/packaging/debian/nouveau-dkms.prerm" "${CONTROL_DIR}/prerm"
+sed "s/@PKGVER@/${VERSION}/g" "${REPO_ROOT}/packaging/debian/nouveau-dkms.postinst" > "${CONTROL_DIR}/postinst"
+sed "s/@PKGVER@/${VERSION}/g" "${REPO_ROOT}/packaging/debian/nouveau-dkms.prerm" > "${CONTROL_DIR}/prerm"
 chmod 755 "${CONTROL_DIR}/postinst" "${CONTROL_DIR}/prerm"
 
 # 3. Create debian-binary

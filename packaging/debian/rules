@@ -19,6 +19,10 @@ override_dh_auto_install:
 	install -Dm644 nouveau.conf debian/nouveau-dkms/etc/modprobe.d/nouveau.conf
 	install -Dm644 nouveau-load.conf debian/nouveau-dkms/usr/lib/modules-load.d/nouveau.conf
 
+override_dh_installdeb:
+	dh_installdeb
+	sed -i 's/@PKGVER@/$(VERSION)/g' debian/nouveau-dkms/DEBIAN/postinst debian/nouveau-dkms/DEBIAN/prerm
+
 override_dh_clean:
 	dh_clean
 	rm -rf build/
