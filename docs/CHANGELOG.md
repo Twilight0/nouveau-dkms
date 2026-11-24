@@ -4,6 +4,19 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.4.1] - 2026-11-25
+
+### Bug Fixes & Hardening
+- **FIFO Runlist Recovery Hardening (`nvkm_runl_rc`, `0016-drm-nouveau-fifo-kill-channels-on-rc-failure.patch`)**:
+  - Track engine reset failures (`nvkm_engine_reset()`) and check the return value of `runl->func->wait(runl)` (`nv50_runl_wait()`) during runlist recovery (`nvkm_runl_rc()`).
+  - If engine reset or runlist wait fails (`-ETIMEDOUT`), kill all remaining channels on the wedged runlist via `nvkm_chan_error(chan, false)` + `nvkm_chan_remove_locked(chan)` so pending `dma_fence` objects are immediately error-signaled (`-ENODEV`). This prevents `nv50_disp_atomic_commit_work` and `ttm_bo_delayed_delete` from deadlocking permanently in `D` state and freezing the Wayland/X11 compositor after a GPU fault.
+- **CI & Tooling**:
+  - Added `nvkm/engine/fifo/runl.c` to `UPSTREAM_FILES` in `testing/test-kernel-matrix.sh`.
+  - Added a 3-attempt `zypper refresh -f` + `install` retry loop for `openSUSE Tumbleweed` in `.github/workflows/ci-kernel-matrix.yml` to survive transient `repo-oss` mirror syncs.
+  - Added `tools/reload_nouveau.sh` helper for unloading/reloading `nouveau` from a text TTY.
+
+---
+
 ## [2.4.0] - 2026-11-24
 
 ### Features & Hardware Support

@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.4.0
+Version:        2.4.1
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -59,6 +59,9 @@ fi
 %{_prefix}/lib/modules-load.d/nouveau.conf
 
 %changelog
+* Wed Nov 25 2026 Twilight0 <twilight0@vivaldi.net> - 2.4.1-1
+- Release v2.4.1: Harden FIFO runlist recovery (0016) to prevent D-state display/TTM deadlocks on GPU faults.
+
 * Tue Nov 24 2026 Twilight0 <twilight0@vivaldi.net> - 2.4.0-1
 - Release v2.4.0: Board-gated DDR3 executor, perf v0x40 memory pair discovery, and GF108 Quadro 600 324<->800 MHz reclocking.
 - Gate L702X DDR3 executor script to its board and scope 0f VID clamp to GF106.

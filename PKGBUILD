@@ -1,6 +1,6 @@
 # Maintainer: Twilight0 <https://github.com/Twilight0>
 pkgname=nouveau-dkms
-pkgver=2.4.0
+pkgver=2.4.1
 pkgrel=1
 pkgdesc="Unified Nouveau out-of-tree module with Fermi core, shader, and DDR3 memory reclocking (DKMS)"
 arch=('x86_64')

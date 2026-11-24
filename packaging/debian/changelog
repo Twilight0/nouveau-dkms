@@ -1,3 +1,11 @@
+nouveau-dkms (2.4.1-1) unstable; urgency=medium
+
+  * Release v2.4.1: Harden FIFO runlist recovery (0016) to kill remaining
+    channels and error-signal pending dma_fence objects when engine reset
+    or runlist wait fails, preventing D-state display/TTM deadlocks.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Wed, 25 Nov 2026 00:55:00 +0200
+
 nouveau-dkms (2.4.0-1) unstable; urgency=medium
 
   * Release v2.4.0: Board-gated DDR3 executor, perf v0x40 memory pair
