@@ -1,4 +1,4 @@
-VERSION ?= 2.3.4
+VERSION ?= 2.4.0
 PKGNAME ?= nouveau-dkms
 DESTDIR ?=
 PREFIX ?= /usr

@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.3.4
+Version:        2.4.0
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -59,6 +59,12 @@ fi
 %{_prefix}/lib/modules-load.d/nouveau.conf
 
 %changelog
+* Tue Nov 24 2026 Twilight0 <twilight0@vivaldi.net> - 2.4.0-1
+- Release v2.4.0: Board-gated DDR3 executor, perf v0x40 memory pair discovery, and GF108 Quadro 600 324<->800 MHz reclocking.
+- Gate L702X DDR3 executor script to its board and scope 0f VID clamp to GF106.
+- Discover DDR3 memory clock pairs from perf table v0x40 (perfS[0x05]).
+- Add GF108 Quadro 600 324<->800 MHz PMU script and fix GF108 MPLL clock readback.
+
 * Sun Nov 22 2026 Twilight0 <twilight0@vivaldi.net> - 2.3.4-1
 - Release v2.3.4: Fix 120 Hz VBlank reclock synchronization in gf100_ram_wait_vblank.
 

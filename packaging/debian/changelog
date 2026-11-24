@@ -1,3 +1,15 @@
+nouveau-dkms (2.4.0-1) unstable; urgency=medium
+
+  * Release v2.4.0: Board-gated DDR3 executor, perf v0x40 memory pair
+    discovery, and GF108 Quadro 600 324<->800 MHz reclocking.
+  * Gate L702X DDR3 executor script to its board and scope 0f VID clamp
+    to GF106, preventing -EINVAL failures on other Fermi DDR3 boards.
+  * Discover DDR3 memory clock pairs from perf table v0x40 (perfS[0x05]).
+  * Add GF108 Quadro 600 324<->800 MHz PMU script and fix GF108 MPLL
+    memory clock readback.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Tue, 24 Nov 2026 20:05:00 +0200
+
 nouveau-dkms (2.3.4-1) unstable; urgency=medium
 
   * Release v2.3.4: Fix 120 Hz VBlank reclock synchronization in gf100_ram_wait_vblank

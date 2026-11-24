@@ -1,4 +1,4 @@
-# nouveau-dkms (`v2.3.4`)
+# nouveau-dkms (`v2.4.0`)
 
 Out-of-tree **Nouveau DKMS kernel module** providing core, shader, voltage, PCIe link, and bidirectional DDR3 memory reclocking (324 MHz ↔ 900 MHz), S3 suspend/resume recovery, live TTM VRAM telemetry, vertical blanking synchronization, and multi-kernel support across Linux 6.18 through 7.3.
 
