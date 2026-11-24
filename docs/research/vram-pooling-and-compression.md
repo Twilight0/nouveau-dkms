@@ -1,6 +1,8 @@
-# 🧠 OpenCL 3.0, Local AI Inference & VRAM-as-System-RAM Architecture (`VRAM_AI.md`)
+# OpenCL Compute, Memory Pooling & Compressed VRAM Swap Architecture
 
-This document is the unified reference and implementation specification for **OpenCL 3.0 compute (`Mesa Rusticl`)**, **Local LLM / SLM AI Inference (`llama.cpp` / `CLBlast`)**, **Unified `VRAM + GART` Memory Pooling**, and **GPU-Accelerated VRAM Swap (`nvzram`)** on NVIDIA Fermi (`GF10x`/`GF11x`) and pre-`Nova` GPUs under the **Nouveau** driver.
+> **Notice:** This document is an exploratory architectural research paper examining unified `VRAM + GART` memory pooling, OpenCL compute via Mesa Rusticl, and theoretical compressed VRAM swap (`nvzram`) on Fermi-class GPUs. These concepts are experimental research prototypes and are separate from the core, production-verified `nouveau-dkms` kernel module (which focuses on display stability, clock management, and DDR3 reclocking).
+
+This document outlines the technical feasibility, memory bandwidth models, and architectural specifications for **OpenCL 3.0 compute (`Mesa Rusticl`)**, quantized small language model execution (`llama.cpp` / `CLBlast`), **Unified `VRAM + GART` Memory Pooling**, and **GPU-accelerated VRAM swap (`nvzram`)** on NVIDIA Fermi (`GF10x`/`GF11x`) hardware under the **Nouveau** driver.
 
 ---
 

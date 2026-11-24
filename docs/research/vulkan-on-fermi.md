@@ -1,6 +1,8 @@
-# 🌋 Vulkan on NVIDIA Fermi (`GF10x` / `GF11x`): Hardware Analysis & Implementation Roadmap
+# Vulkan on NVIDIA Fermi (`GF10x` / `GF11x`): Hardware Analysis & Implementation Roadmap
 
-This document details our architectural and reverse-engineering findings on why NVIDIA omitted Vulkan support for Fermi (`NV_C0`–`NV_D9`, GeForce 400/500/600M series) in the proprietary `390.157` driver, what hardware capabilities the Fermi silicon actually possesses, and the concrete technical pathways to bring **Vulkan 1.0 / 1.1** (and DirectX 9/10/11 gaming) to Fermi on Linux alongside **`nouveau`**.
+> **Notice:** This document is an exploratory architectural research paper examining the hardware feasibility of a bound-descriptor Vulkan 1.0/1.1 implementation (`nvk-fermi`) for Fermi architectures in user-space (Mesa). This research is separate from the `nouveau-dkms` kernel driver module.
+
+This document details architectural and reverse-engineering findings on why NVIDIA omitted Vulkan support for Fermi (`NV_C0`–`NV_D9`, GeForce 400/500/600M series) in the proprietary `390.157` driver, what hardware capabilities the Fermi silicon actually possesses, and the technical pathways to implement **Vulkan 1.0 / 1.1** on Fermi via Mesa.
 
 ---
 
@@ -18,18 +20,18 @@ This document details our architectural and reverse-engineering findings on why 
 
 | Feature / Subsystem | Vulkan 1.0 / 1.1 Requirement | Fermi (`GF106` / `NV_C0`) Hardware Capability | Status |
 |---|---|---|---|
-| **3D Engine Class** | Programmable graphics pipeline | `NVC0_3D` (`0x9097`), `NVC1_3D` (`0x9097`), `NVC8_3D` (`0x9197`), `NVCE_3D` (`0x9297`) | ✅ Native HW |
-| **Compute Engine Class** | `VK_QUEUE_COMPUTE_BIT` | `NVC0_COMPUTE` (`0x90c0`) with 48 KB L1/Shared Memory per SM & hardware barriers | ✅ Native HW |
-| **DMA / Transfer Queue** | `VK_QUEUE_TRANSFER_BIT` | Dual async copy engines (`PCOPY0` `0x104000`, `PCOPY1` `0x105000`, class `0x90b5`) | ✅ Native HW |
-| **Virtual Memory & MMU** | 40-bit virtual address space & sparse pages | 40-bit NV50/NVC0 VM with 4 KB / 64 KB / 128 KB page tables & compression tags | ✅ Native HW |
-| **Tessellation** | `tessellationShader` | Hardware Polymorph Engines (Hull / Domain / Tessellator stages) | ✅ Native HW |
-| **Geometry Shaders** | `geometryShader` & `multiViewport` | Native hardware Geometry Shader + up to 16 viewports | ✅ Native HW |
-| **Shader Storage Buffers (SSBOs)** | `vertexPipelineStoresAndAtomics`, `fragmentStoresAndAtomics` | Native global memory loads/stores (`LD`/`ST`/`ATOM`/`RED` instructions on 64-bit pointers) | ✅ Native HW |
-| **Storage Images** | `shaderStorageImageExtendedFormats` | Hardware surface load/store/atomic (`SULD`/`SUST`/`SURED`) via 8 surface binding slots | ✅ Native HW |
-| **Indirect Draws & Dispatch** | `multiDrawIndirect`, `drawIndirectFirstInstance` | Hardware `Macro` processor (MME) in `PGRAPH` (`0x409800`) executes indirect draw loops natively | ✅ Native HW |
-| **Push Constants** | Minimum 128 bytes | Can dedicate 1 Constant Buffer slot (`c0[]` or `c14[]`, up to 64 KB) for instant push constants | ✅ Native HW |
-| **Uniform Buffers (UBOs)** | Minimum 12 per stage | **16 hardware Constant Buffer slots (`c0[]`..`c15[]`) per shader stage** (14 available to user shaders) or global memory loads | ✅ Native HW |
-| **Sampled Images & Samplers** | Minimum 16 per stage | **128 `TIC` (Texture Image Control) slots + 32 `TSC` (Texture Sampler Control) slots per stage** | ⚠️ Bound Table (Requires Lowering) |
+| **3D Engine Class** | Programmable graphics pipeline | `NVC0_3D` (`0x9097`), `NVC1_3D` (`0x9097`), `NVC8_3D` (`0x9197`), `NVCE_3D` (`0x9297`) | Supported (Native HW) |
+| **Compute Engine Class** | `VK_QUEUE_COMPUTE_BIT` | `NVC0_COMPUTE` (`0x90c0`) with 48 KB L1/Shared Memory per SM & hardware barriers | Supported (Native HW) |
+| **DMA / Transfer Queue** | `VK_QUEUE_TRANSFER_BIT` | Dual async copy engines (`PCOPY0` `0x104000`, `PCOPY1` `0x105000`, class `0x90b5`) | Supported (Native HW) |
+| **Virtual Memory & MMU** | 40-bit virtual address space & sparse pages | 40-bit NV50/NVC0 VM with 4 KB / 64 KB / 128 KB page tables & compression tags | Supported (Native HW) |
+| **Tessellation** | `tessellationShader` | Hardware Polymorph Engines (Hull / Domain / Tessellator stages) | Supported (Native HW) |
+| **Geometry Shaders** | `geometryShader` & `multiViewport` | Native hardware Geometry Shader + up to 16 viewports | Supported (Native HW) |
+| **Shader Storage Buffers (SSBOs)** | `vertexPipelineStoresAndAtomics`, `fragmentStoresAndAtomics` | Native global memory loads/stores (`LD`/`ST`/`ATOM`/`RED` instructions on 64-bit pointers) | Supported (Native HW) |
+| **Storage Images** | `shaderStorageImageExtendedFormats` | Hardware surface load/store/atomic (`SULD`/`SUST`/`SURED`) via 8 surface binding slots | Supported (Native HW) |
+| **Indirect Draws & Dispatch** | `multiDrawIndirect`, `drawIndirectFirstInstance` | Hardware `Macro` processor (MME) in `PGRAPH` (`0x409800`) executes indirect draw loops natively | Supported (Native HW) |
+| **Push Constants** | Minimum 128 bytes | Can dedicate 1 Constant Buffer slot (`c0[]` or `c14[]`, up to 64 KB) for instant push constants | Supported (Native HW) |
+| **Uniform Buffers (UBOs)** | Minimum 12 per stage | **16 hardware Constant Buffer slots (`c0[]`..`c15[]`) per shader stage** (14 available to user shaders) or global memory loads | Supported (Native HW) |
+| **Sampled Images & Samplers** | Minimum 16 per stage | **128 `TIC` (Texture Image Control) slots + 32 `TSC` (Texture Sampler Control) slots per stage** | Bound Table (Requires Lowering) |
 
 ---
 
@@ -118,10 +120,10 @@ Even with a native Vulkan driver or OpenGL 4.3, stock upstream Nouveau crippled 
 
 | Hardware Bottleneck on Stock Nouveau | Impact on OpenGL 4.3 / Vulkan Workloads | Fixed by `nouveau` (`v2.0.1+`) |
 |---|---|---|
-| **Memory Stuck at `324 MHz` (or `135 MHz`)** | Only `15.5 GB/s` bandwidth (with ~`1.9 GB/s` eaten by 120 Hz scanout), starving every shader & render target | ✅ **900 MHz DDR3 (`43.2 GB/s`)** via custom Falcon PMU executor (`2.78×` bandwidth) |
-| **Core/Shader Stuck at `202 / 405 MHz`** | `116 GFLOPS` FP32 (~29% of hardware capacity) | ✅ **590 / 1180 MHz (`0f`, `340 GFLOPS`)** and **700 / 1400 MHz (`10`, `403 GFLOPS`)** |
-| **Voltage Stuck at `0.820 V` / `0.870 V`** | GPU hangs under heavy shader load due to VMAP undervolting bug | ✅ **True `1.030 V` factory rail** (plus upcoming `0.920 V` P3 state `0a`) |
-| **PCIe Stuck at Gen1 (`2.5 GT/s`)** | Pushbuffer & staging buffer uploads bottlenecked at `4.0 GB/s` | ✅ **Dynamic PCIe Gen2 (`5.0 GT/s`, `8.0 GB/s` per direction)** |
+| **Memory Stuck at `324 MHz` (or `135 MHz`)** | Only `15.5 GB/s` bandwidth (with ~`1.9 GB/s` eaten by 120 Hz scanout), starving every shader & render target | **900 MHz DDR3 (`43.2 GB/s`)** via custom Falcon PMU executor (`2.78×` bandwidth) |
+| **Core/Shader Stuck at `202 / 405 MHz`** | `116 GFLOPS` FP32 (~29% of hardware capacity) | **590 / 1180 MHz (`0f`, `340 GFLOPS`)** and **700 / 1400 MHz (`10`, `403 GFLOPS`)** |
+| **Voltage Stuck at `0.820 V` / `0.870 V`** | GPU hangs under heavy shader load due to VMAP undervolting bug | **True `1.030 V` factory rail** (plus upcoming `0.920 V` P3 state `0a`) |
+| **PCIe Stuck at Gen1 (`2.5 GT/s`)** | Pushbuffer & staging buffer uploads bottlenecked at `4.0 GB/s` | **Dynamic PCIe Gen2 (`5.0 GT/s`, `8.0 GB/s` per direction)** |
 
 ### Kernel Capabilities Already Ready for `NVK` on Fermi
 If we pursue **Pathway A** (wiring `NVC0` into Mesa's Vulkan stack using the existing NIR $\to$ `nv50_ir` compiler backend), the kernel interface in our driver (`nouveau_drm.c` / `nouveau_uvmm.c`) **already supports the modern `DRM_IOCTL_NOUVEAU_VM_BIND` and `EXEC` syncobj uAPI** required by Mesa NVK—meaning only the userspace device-info filter and bound-descriptor lowering pass in Mesa are needed to begin experimenting!

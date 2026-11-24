@@ -1,29 +1,30 @@
-# 📋 Roadmap & TODO (`TODO.md`)
+# Roadmap & TODO (`TODO.md`)
 
 This document tracks completed milestones, open engineering tasks, and the multi-architecture roadmap for **`nouveau-dkms`**.
 
 ### Documentation Map
 - **[`RECLOCKING_NOTES.md`](RECLOCKING_NOTES.md)**: Hardware register tables, Falcon microcode architecture, and decompiled NVIDIA `390.157` (`nv-kernel.o_binary` & `nv-modeset-kernel.o_binary`) specifications.
-- **[`VRAM_AI.md`](VRAM_AI.md)**: OpenCL 3.0 (`Mesa Rusticl`), Local LLM/SLM inference guide (`llama.cpp`), Unified `VRAM + GART` memory pooling, `/dev/nvram0` DMA block device, and GPU-compressed `nvzram`.
-- **[`VULKAN.md`](VULKAN.md)**: Fermi (`NVC0_3D` / `NVC0_COMPUTE`) Vulkan 1.0/1.1 feasibility & bound-descriptor (`nvk-fermi`) design.
-- **[`NVENC.md`](NVENC.md)**: Video encoding (`x264` OpenCL, Hybrid Compute-Shader `VA-API` H.264 encoder for OBS Studio, Kepler/Maxwell `MSENC`) & PureVideo HD (`VP4`) hardware decode.
+- **[`research/vram-pooling-and-compression.md`](research/vram-pooling-and-compression.md)**: Research paper on OpenCL 3.0 (`Mesa Rusticl`), quantized SLM execution, Unified `VRAM + GART` memory pooling, and GPU-compressed `nvzram`.
+- **[`research/vulkan-on-fermi.md`](research/vulkan-on-fermi.md)**: Architectural analysis of Fermi (`NVC0_3D` / `NVC0_COMPUTE`) bound-descriptor Vulkan 1.0/1.1 feasibility (`nvk-fermi`).
+- **[`research/video-encoding-architecture.md`](research/video-encoding-architecture.md)**: Video encoding architecture (`x264` OpenCL, Hybrid Compute-Shader `VA-API` H.264 encoder, Kepler/Maxwell `MSENC`) & PureVideo HD (`VP4`) hardware decode.
+- **[`research/stereoscopic-3d-vision.md`](research/stereoscopic-3d-vision.md)**: Active-shutter stereoscopic 3D hardware reference and USB IR emitter protocol.
 - **[`CHANGELOG.md`](CHANGELOG.md) & [`PATCH_HISTORY.md`](PATCH_HISTORY.md)**: Release changelog and patch rollback catalog.
 
 ---
 
 ## Table of Contents
-1. [Completed Milestones (`v1.0` – `v2.1.0`)](#-completed-milestones)
-2. [Kernel & Hardware Subsystems Roadmap](#-kernel--hardware-subsystems-roadmap)
-3. [Falcon Microcode & Memory Controller Expansion](#-falcon-microcode--memory-controller-expansion)
-4. [Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)](#-dynamic-governor-modernization-nouveau-dynclockd-20)
-5. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#-telemetry-modern-drmdri-apis--wayland-explicit-sync)
-6. [Compute, Video Encoding, Vulkan & `nvzram`](#-compute-video-encoding-vulkan--nvzram)
-7. [Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery](#-wayland-egl-stability-full-opengl-4346-feature-parity--robust-mmu-fault-recovery)
-8. [Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging](#-project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
+1. [Completed Milestones](#completed-milestones)
+2. [Kernel & Hardware Subsystems Roadmap](#kernel--hardware-subsystems-roadmap)
+3. [Falcon Microcode & Memory Controller Expansion](#falcon-microcode--memory-controller-expansion)
+4. [Dynamic Governor Modernization](#dynamic-governor-modernization)
+5. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#telemetry-modern-drmdri-apis--wayland-explicit-sync)
+6. [Compute, VRAM Pooling, Video Firmware & Research](#compute-vram-pooling-video-firmware--research)
+7. [Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery](#wayland-egl-stability-full-opengl-4346-feature-parity--robust-mmu-fault-recovery)
+8. [Project Evolution: nouveau-dkms, Multi-Kernel CI & Cross-Distro Packaging](#project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
 
 ---
 
-## ✅ Completed Milestones
+## Completed Milestones
 
 - [x] **`v1.0` — Baseline Fermi Core & Shader Reclocking**:
   - Implemented core and 2× hot-clock shader scaling (`50/101 MHz`, `202/405 MHz`, `590/1180 MHz`).
@@ -55,7 +56,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## 🎯 Kernel & Hardware Subsystems Roadmap
+## Kernel & Hardware Subsystems Roadmap
 
 ### 1. Eliminating Screen Flashes During Clock Changes (True Zero-Flash VBlank Memory Reclocking)
 *(Full hardware specification in [`RECLOCKING_NOTES.md` §10.4](RECLOCKING_NOTES.md#104-nv-kernelo_binary-the-rm-sequencer-objseq--seqscript--memx-bytecode-emitter-api--zero-flash-vblank-pipeline). 390-blob REA: `nv-kernel.o_binary` string-anchored functions `_nv010494rm` (`RmIsoHubMCLKSwitch`), `_nv012821rm` (`RMOnDemandVBlank`), `_nv012818rm` (`RMGlitchlessModeset`, 0xdb5 bytes), `_nv011282rm` (`RmNvsrFlickerControl`), `_nv019868rm` (`RMFermiMinGpmFifoDepth`); static objdump+reloc-xref route, Ghidra not required)*
@@ -97,15 +98,9 @@ This document tracks completed milestones, open engineering tasks, and the multi
   - Decompile `_nv029625rm` (`0x515a70`) and `_nv029628rm` (`0x515ad0`) to extract the exact signal masks for `GR %`, `FB %`, and `VDEC %` busy counters in `PDAEMON` and expose them via debugfs/sysfs.
 
 ### 5. Closing the Performance Parity Gap with NVIDIA 390.157 (The Final 15–25%)
-*(Full technical analysis: With core/shader (`590/1180 MHz`), DDR3 memory (`900 MHz`), and PCIe Gen2 (`5.0 GT/s x16`) reclocking operating at 100% silicon parity in `v2.2.0`, the remaining performance gap against NVIDIA's proprietary driver stems from raster tile compression, superscalar shader dispatch, and dynamic clock gating).*
-- [ ] **Lossless Z-Cull & Tile Depth Compression (`TAGRAM` / `PLTCG` `0x140000` / `PGRAPH`) [~15% Bandwidth Win]**:
-  - Audit and decompile `_nv010721rm` / `_nv031754rm` (`objseq` raster config) and Mesa's `nv50` driver (`nv50_surface.c` / `nv50_miptree.c`).
-  - Configure hardware Z-Cull hierarchical depth buffers and ROP color tile compression tags (`TAGRAM`). By writing compressed depth tags instead of uncompressed 32-bit float depths during shadow-map and geometry passes, memory bus pressure in 3D gaming is reduced by **30–50%**, eliminating the largest remaining throughput gap.
-- [ ] **Dual-Issue Warp Scheduling & Superscalar Execution in Mesa `nv50_ir` [~10% Shader Compute Win]**:
-  - Fermi SM20 (`GF100`/`GF104`/`GF106`) features **two warp schedulers and two instruction dispatch units per SM**, capable of co-issuing two independent instructions concurrently (e.g. ALU + TEX/MEM or INT + FP32 FMA).
-  - Enhance Mesa's `nv50_ir` instruction scheduler to aggressively pair independent instructions into dual-issue bundles matching NVIDIA's proprietary compiler, closing the instruction throughput deficit in complex fragment/compute shaders.
-- [ ] **Register Spilling Mitigation & Graph-Coloring Rematerialization in `nv50_ir`**:
-  - Improve register allocation in `nv50_ir` by implementing rematerialization of uniform expressions, constants, and address calculations to eliminate spills to slow local VRAM.
+*(Full technical analysis: With core/shader (`590/1180 MHz`), DDR3 memory (`900 MHz`), and PCIe Gen2 (`5.0 GT/s x16`) reclocking operating at 100% silicon parity in `v2.2.0`, the remaining performance gap against NVIDIA's proprietary driver stems from raster tile compression, superscalar shader dispatch, and dynamic clock gating. Userspace `nv50_ir` / Gallium compiler and shader items have moved to [`Twilight0/mesa-aliveos`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md).)*
+- [ ] **Kernel `TAGRAM` Allocation for Z-Cull & Tile Depth Compression (`PLTCG` `0x140000` / `PGRAPH`)**:
+  - Audit and decompile `_nv010721rm` / `_nv031754rm` (`objseq` raster config) so the kernel allocates and exposes `TAGRAM` backing buffers for userspace Mesa (`mesa-aliveos`) to bind Z-Cull and ROP color tile compression tags.
 - [ ] **Hardware `PTHERM` Auto-Slowdown (`0x00020xxx`) & Progressive Multi-Step Thermal Throttling**:
   - Because the non-Optimus Dell XPS L702X cools both the Intel CPU and NVIDIA GT 555M with a **single shared blower fan**, program hardware `PTHERM` clock-slowdown failsafes at `90–92 °C` and implement progressive governor step-down (`10` → `0f` at `78 °C` → `0a` at `82 °C` → `07` at `86 °C`).
 - [ ] **Fine-Grained BLCG / SLCG Hardware Clock Gating (`0x00020xxx`)**:
@@ -119,8 +114,15 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## ⚡ Falcon Microcode & Memory Controller Expansion
+## Falcon Microcode & Memory Controller Expansion
 
+- [ ] **Two-Tier Universal Fermi DDR3 Reclocking (Issue #46 — `GF108`, `GF119`, etc.)**:
+  - **Tier 1 — Safe Non-GF106M Fallback & Perf `v0x40` Discovery (`v2.3.5`)**:
+    - Parse VBIOS Performance Table `v0x40` (`perfS.v40.freq` for `nv_clk_src_mem`) alongside `v0x25`–`v0x3f` in `gf100_ram_init()` so `ddr3_lo`/`ddr3_hi` reflect the board's actual VBIOS clocks (e.g. `405/500 MHz` on `GF108` instead of falling back to `324/900 MHz`).
+    - Move the "already at target" check before validation in `gf100_ram_calc_ddr3()`, and gate `gf100_ram_exec_custom()` strictly to boards/clocks with a verified native Falcon script (`GF106` `324/900 MHz` until Tier 2). On all other Fermi DDR3 boards/clocks, log once cleanly and return `0` leaving DRAM at its current clock so core, shader, and voltage P-states (`07`, `0f`, `10`) transition with zero `-EINVAL` (`-22`) errors.
+  - **Tier 2 — VBIOS-Parameterized Falcon DMEM Executor (`v2.4.0`)**:
+    - Replace hardcoded `GF106M` `324/900 MHz` constants inside `fexec_code.fuc` with a Falcon DMEM parameter struct populated by `gf100_ram_calc()` from each board's own VBIOS (`Timing`, `Timing Mapping`, `PLL limits`, `MEM TYPE`, and `MR0–MR3` `0x10f300..0x10f30c`).
+    - Leverage community hardware reports from GitHub Discussions (`#39` `GF108` GT 730, `#40` `GF108M` GT 540M, `#41` `GF108M` GT 630M, `#34`/`#37`/`#32` `GF119M` 410M/520M/610M) to populate `include/nvkm/core/quirks.h` (`NOUVEAU_QUIRK_DDR3_1PARTITION` vs `3PARTITION`, verified SSIDs in `pci.c`) and validate `GF106M` (`324 <-> 900 MHz`) parity before testing `GF108` (`405 <-> 500 MHz`) and `GF119M` (`405 <-> 800 MHz`).
 - [ ] **Generalize Falcon Executor Across All Fermi Chips (`GF100`–`GF119`)**:
   - Decouple GF106-specific DDR3 offsets in `ramgf100.c` using the per-family RM emitters (`_nv015935rm` GF100, `_nv015936rm` GF104/GF106, `_nv015937rm` GF108, `_nv015938rm` GF119) and partition unicast/broadcast mapper `[pFb + 0xd20]` (`_nv016234rm`) supporting 64-bit to 384-bit buses.
 - [ ] **Fermi GDDR5 Timing & Training Engine (`_nv010721rm` / `_nv010722rm`)**:
@@ -128,7 +130,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## 🔋 Dynamic Governor Modernization (`nouveau-dynclockd` 2.0)
+## Dynamic Governor Modernization
 
 - [ ] **Replace `/proc` CPU-Tick Scanning with Hardware GPU Load Counters (`0x10a600..0x10a610`)**:
   - Replace `get_monitored_app_ticks()` `/proc` scanning with a single `< 0.05 ms` read of hardware `GR %`, `FB %`, and `VDEC %` utilization counters. *(Hardware interrupt delta tracking implemented in `v2.2.0` via `/proc/interrupts` `nvkm`)*.
@@ -143,7 +145,7 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## 📊 Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync
+## Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync
 
 - [ ] **Standard Linux DRM `drm_show_fdinfo` (`nvtop` / `btop` / `MangoHud` Support)**:
   - Wire `drm_driver.show_fdinfo` in `nouveau_drm.c` to export per-client `drm-memory-vram`, `drm-memory-gtt`, `drm-engine-gfx`, `drm-engine-dec`, and `drm-engine-dma`.
@@ -156,24 +158,21 @@ This document tracks completed milestones, open engineering tasks, and the multi
 
 ---
 
-## 🧠 Compute, Video Encoding, Vulkan & `nvzram`
+## Compute, VRAM Pooling, Video Firmware & Research
 
-- [ ] **OpenCL 3.0 (`Mesa Rusticl`), Unified `VRAM + GART` AI Inference & GPU-Compressed `nvzram` ([`VRAM_AI.md`](VRAM_AI.md))**:
-  1. Unlock `~2.75 GiB` (`90%` of VRAM) single-buffer allocations in `nvc0` / `Rusticl` for `llama.cpp` and `CLBlast`.
-  2. Implement Mode A (`TTM_PL_VRAM | TTM_PL_TT` transparent oversubscription + `PCOPY` layer prefetching) for `> 3 GiB` LLMs.
-  3. Implement Mode B (`/dev/nvram0` `PCOPY1` DMA-backed upper-VRAM block device with automatic 3D/AI balloon eviction).
-  4. Implement **`nvzram`** (`PCOPY0` batch DMA + `NVC0_COMPUTE` `SM20` Warp-LZ4 compression inside VRAM storing `~6.0–7.5 GiB` of compressed RAM in `2.5 GiB` VRAM, with `< 0.6 µs` compressed-DMA single-page `swapin`).
-- [ ] **GPU Video Encoding (`VA-API` Hybrid Compute H.264 / `x264` OpenCL / `MSENC`) & `VP4` Decode ([`NVENC.md`](NVENC.md))**:
-  1. Validate `x264 --opencl` lookahead via `Rusticl` in OBS Studio and FFmpeg.
-  2. Build the 4-stage **Compute-Shader-Backed `VA-API` (`VAEntrypointEncSlice`) H.264 Encoder** (`DMA-BUF` `RGB → NV12` + SM parallel SAD/SATD ME + integer DCT/Quant + host CAVLC/CABAC packer) for OBS Studio (`obs-vaapi`) and FFmpeg (`h264_vaapi`).
-  3. Ship `nouveau-extract-fw` to extract PureVideo HD `VP4` decode firmware (`nv98_fuc084/085/086`) from `390.157`.
-  4. Reverse-engineer Kepler (`GK104+`) & Maxwell (`GM107+`) fixed-function `MSENC` (`0x1c8000`) for VA-API H.264 encoding.
-- [ ] **Fermi Vulkan 1.0 / 1.1 (`nvk-fermi` Bound Descriptor Lowering — [`VULKAN.md`](VULKAN.md))**:
-  - Prototype a `hasvk`-style bound-descriptor lowering pass (`128 TIC` / `32 TSC` slots per stage) pairing `NVK`'s command buffer/sync runtime with Mesa's `NIR → nv50_ir` (`TargetNVC0`) compiler backend.
+*(Userspace Mesa `Rusticl`, `VA-API` compute-shader H.264 encoder, and `nvk-fermi` Vulkan tasks have moved to [`Twilight0/mesa-aliveos`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md). Below are the remaining kernel-side and research items.)*
+
+- [ ] **Unified `VRAM + GART` AI Inference & GPU-Compressed `nvzram` ([`research/vram-pooling-and-compression.md`](research/vram-pooling-and-compression.md))**:
+  1. Implement Mode A (`TTM_PL_VRAM | TTM_PL_TT` transparent oversubscription + `PCOPY` layer prefetching) for `> 3 GiB` LLMs.
+  2. Implement Mode B (`/dev/nvram0` `PCOPY1` DMA-backed upper-VRAM block device with automatic 3D/AI balloon eviction).
+  3. Implement **`nvzram`** (`PCOPY0` batch DMA + `NVC0_COMPUTE` `SM20` Warp-LZ4 compression inside VRAM storing `~6.0–7.5 GiB` of compressed RAM in `2.5 GiB` VRAM, with `< 0.6 µs` compressed-DMA single-page `swapin`).
+- [ ] **Video Firmware (`VP4` Decode) & `MSENC` Hardware Enablement ([`research/video-encoding-architecture.md`](research/video-encoding-architecture.md))**:
+  1. Ship `nouveau-extract-fw` (in `nouveau-utils`) to extract PureVideo HD `VP4` decode firmware (`nv98_fuc084/085/086`) from `390.157`.
+  2. Reverse-engineer Kepler (`GK104+`) & Maxwell (`GM107+`) fixed-function `MSENC` (`0x1c8000`) kernel/firmware initialization for `VA-API` H.264 encoding in `mesa-aliveos`.
 
 ---
 
-## 🛡️ Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery
+## Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery
 
 *(Thorough investigation via REA, decompilation of `nv-kernel.o_binary` / `libnvidia-glcore.so.390.157`, Khronos conformance verification, and hardware trap tracing on GF106/Fermi)*
 
@@ -196,53 +195,11 @@ Modern heavy desktop and 3D applications (e.g. Blender 4.0+, modern browsers, an
 4. **Catastrophic Channel Recovery (`nvkm_runl_rc_cgrp`)**: In `nvkm/engine/fifo/gf100.c`, Nouveau responds to any MMU fault by unconditionally killing the client channel (`channel killed!`). Subsequent pushbuf submissions return `ENODEV` (`nouveau: kernel rejected pushbuf: No such device`), immediately crashing the application with `SIGSEGV` instead of isolating the fault.
 5. **`mesa_glthread=true` Pushbuf Races**: Asynchronous multi-threaded command batching in Mesa triggers pushbuf reordering and race conditions on Nouveau, worsening buffer alignment and sync faults.
 
-### Full OpenGL 4.3–4.6 Specification & Feature Parity Roadmap
+### Full OpenGL 4.3–4.6 Specification & Feature Parity Roadmap (Kernel vs. Mesa)
 
-```mermaid
-flowchart TD
-    subgraph MesaNouveau ["Mesa nvc0 Gallium Driver"]
-        P1["Phase 1: Fix GL 4.3 Compute & SSBOs<br/>(Bounds Clamping in nv50_ir + Zero-Page VMM)"]
-        P2["Phase 2: Implement Missing GL 4.4 - 4.6 Extensions<br/>(ARB_indirect_parameters, ARB_gl_spirv)"]
-    end
+*(Userspace Mesa tasks for `nv50_ir` SSBO bounds clamping, `nvc0_surface.c` alignment, `platform_wayland.c` EGL visual fallback, `drirc`, and OpenGL 4.5–4.6 / `nvk-fermi` / Zink extensions have moved to [`Twilight0/mesa-aliveos`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md). Below are the remaining kernel-side tasks in `nouveau-dkms`.)*
 
-    subgraph AltPath ["Alternative Modern Pathway"]
-        P3["Phase 3: Zink on nvk-fermi<br/>(Full OpenGL 4.6 via Vulkan 1.0 Runtime)"]
-    end
-
-    HW["Fermi GF100-GF119 Silicon<br/>(Full OpenGL 4.6 Hardware Support)"]
-
-    HW --> MesaNouveau
-    HW --> AltPath
-```
-
-#### Phase 1: Stabilize OpenGL 4.3 (Compute Shaders & SSBOs)
-- [ ] **Mesa `nv50_ir`: Fermi SSBO 64-Bit Address Bounds Clamping (`TargetNVC0`)**:
-  - **Decompilation Reference**: In `libnvidia-compiler.so` / `libnvidia-glcore.so.390.157`, shader compilation for Fermi inserts explicit bounds-check clamps against the buffer length before computing effective addresses for global memory instructions (`LD.E` / `ST.E`).
-  - **Task**: In Mesa `src/nouveau/codegen/nv50_ir_target_nvc0.cpp` (`emitSSBOOp`), inject a software bounds-clamping pass. Clamp the effective offset using `MIN(offset, buffer_size - access_size)` before 64-bit pointer construction to guarantee that `LD.E` never accesses out-of-range addresses (`OOR_ADDR`).
-- [ ] **Kernel: Shared Read-Only Zero-Page Virtual Address Fallback (`vmmgf100.c`)**:
-  - In `nvkm/subdev/mmu/vmmgf100.c`, map unallocated userspace GPU virtual address ranges to a shared read-only zero page instead of leaving page table entries unpopulated (`PT_NOT_PRESENT`). Out-of-bounds shader reads will return `0.0f` rather than triggering a fatal hardware MMU fault, matching modern GPU fault-tolerant memory behavior.
-- [ ] **Kernel: Non-Fatal MMU Fault Isolation & Engine Soft-Reset (`nvkm/engine/fifo/gf100.c` & `nvkm/engine/gr/gf100.c`)**:
-  - **Decompilation Reference**: `nv-kernel.o_binary` exports `rm_gpu_ops_service_device_interrupts_rm` and `_nv007827rm` / `_nv007800rm` error containment. When a warp trap occurs, the NVIDIA proprietary driver resets the execution unit pipeline, drops the offending batch, and logs the error without unbinding the user channel.
-  - **Task**: In `gf100_fifo_mmu_fault_recover()` and `gf100_gr_trap_mp()`, replace unconditional `nvkm_runl_rc_cgrp(chan->cgrp)` channel killing with a recoverable soft-reset pipeline:
-    1. Issue an engine pipeline reset (`0x400500` / `0x400800` PGRAPH flush).
-    2. Clear TPC MP error registers (`0x648` / `0x650`).
-    3. Drop/skip the failing compute dispatch packet, signal the sync fence with `-EIO`, and return control to userspace.
-    4. Implement fault rate-limiting: only escalate to a hard channel kill if more than $N$ faults occur within a 1-second window.
-
-#### Phase 2: Missing Extensions for Native OpenGL 4.5 & 4.6 in `nvc0`
-- [ ] **`GL_ARB_indirect_parameters` (Multi-Draw Indirect with Parameter Buffer)**:
-  - Wire `NV9097_SET_MME_SHADOW` and indirect draw counter reads on Fermi `0x9097` class, allowing GPU-side draw culling without CPU readback.
-- [ ] **`GL_ARB_pipeline_statistics_query` & `GL_ARB_transform_feedback_overflow_query`**:
-  - Expose hardware primitive and geometry counters available in `0x9097` method `0x1b00` (`QUERY_COUNTER`).
-- [ ] **`GL_ARB_gl_spirv` & `GL_ARB_spirv_extensions` (Native SPIR-V Ingestion)**:
-  - Connect Mesa's `nir_spirv` translator into `nvc0_program.c` so applications passing SPIR-V binary shaders (standard in OpenGL 4.6) are lowered directly to NIR and compiled via `TargetNVC0`.
-
-#### Phase 3: OpenGL 4.6 via Zink on `nvk-fermi` (Modern Unified Path)
-- [ ] **Zero-Overhead OpenGL 4.6 via Zink (`Mesa Zink + nvk-fermi`)**:
-  - In addition to native `nvc0` Gallium work, the Vulkan 1.0 layer documented in [`VULKAN.md`](VULKAN.md) automatically enables Mesa's **Zink** driver.
-  - Zink implements full, certified **OpenGL 4.6 Core Profile** on top of any compliant Vulkan driver, giving Fermi complete OpenGL 4.6 support with modern spirv/NIR toolchains and eliminating the need to maintain legacy Gallium state-tracker code paths.
-
-### Actionable Fixes & Implementation Tasks
+### Actionable Kernel-Side Fixes & Implementation Tasks
 
 - [ ] **Kernel: Non-Fatal MMU Fault Isolation & Engine Soft-Reset (`nvkm/engine/fifo/gf100.c` & `nvkm/engine/gr/gf100.c`)**:
   - **Decompilation Reference**: `nv-kernel.o_binary` exports `rm_gpu_ops_service_device_interrupts_rm` and `_nv007827rm` / `_nv007800rm` error containment. When a warp trap occurs, the NVIDIA proprietary driver resets the execution unit pipeline, drops the offending batch, and logs the error without unbinding the user channel.
@@ -253,26 +210,18 @@ flowchart TD
     4. Implement fault rate-limiting: only escalate to a hard channel kill if more than $N$ faults occur within a 1-second window.
 - [ ] **Kernel: Shared Read-Only Zero-Page Virtual Address Fallback (`vmmgf100.c`)**:
   - In `nvkm/subdev/mmu/vmmgf100.c`, map unallocated userspace GPU virtual address ranges to a shared read-only zero page instead of leaving page table entries unpopulated (`PT_NOT_PRESENT`). Out-of-bounds shader reads will return `0.0f` rather than triggering a fatal hardware MMU fault, matching modern GPU fault-tolerant memory behavior.
-- [ ] **Kernel & Mesa: Color Target 256-Byte (`0x100`) Base Alignment Enforcement**:
-  - Enforce strict `ALIGN(offset, 256)` in `nouveau_bo.c` / `nouveau_gem.c` and Mesa's `nvc0_surface.c` for all render target base addresses sent to method `0x0804` (`NV9097_SET_COLOR_TARGET_B`), eliminating PGRAPH `DATA_ERROR 00000004 [INVALID_VALUE]` on suballocated surfaces.
-- [ ] **Mesa `nv50_ir`: Fermi SSBO 64-Bit Address Bounds Clamping (`TargetNVC0`)**:
-  - **Decompilation Reference**: In `libnvidia-compiler.so` / `libnvidia-glcore.so.390.157`, shader compilation for Fermi inserts explicit bounds-check clamps against the buffer length before computing effective addresses for global memory instructions (`LD.E` / `ST.E`).
-  - **Task**: In Mesa `src/nouveau/codegen/nv50_ir_target_nvc0.cpp` (`emitSSBOOp`), inject a software bounds-clamping pass. Clamp the effective offset using `MIN(offset, buffer_size - access_size)` before 64-bit pointer construction to guarantee that `LD.E` never accesses out-of-range addresses (`OOR_ADDR`).
-- [ ] **Mesa / Wayland: EGL Visual Format Matching & Graceful Fallback (`platform_wayland.c`)**:
-  - In Mesa's `src/egl/drivers/dri2/platform_wayland.c`, improve visual probing for pre-Kepler hardware: filter out unsupported 10-bit (`RGB10_A2`) and float formats on Fermi without returning `EGL_BAD_MATCH`, allowing Wayland compositors and apps to match standard 8-bit visuals cleanly.
-- [ ] **Packaging & Userspace: Nouveau Fermi `drirc` & Transparent Launcher Fallbacks**:
-  - Provide `/usr/share/drirc.d/10-nouveau-fermi.conf` (or `nouveau-utils` default config) setting `mesa_glthread=false` for all applications running on the Nouveau driver, preventing asynchronous pushbuf reordering bugs.
-  - In application wrappers (e.g. `blender-4.5.sh`), detect Nouveau on Wayland and provide intelligent fallback options (`WAYLAND_DISPLAY="" DISPLAY=:0` or `LIBGL_ALWAYS_SOFTWARE=1`) until kernel fault containment and Mesa bounds clamping are fully upstreamed.
+- [ ] **Kernel: Color Target 256-Byte (`0x100`) Base Alignment Enforcement (`nouveau_bo.c` / `nouveau_gem.c`)**:
+  - Enforce strict `ALIGN(offset, 256)` in `nouveau_bo.c` / `nouveau_gem.c` for all render target base addresses sent to method `0x0804` (`NV9097_SET_COLOR_TARGET_B`) (paired with Mesa-side enforcement in `mesa-aliveos`), eliminating PGRAPH `DATA_ERROR 00000004 [INVALID_VALUE]` on suballocated surfaces.
 
 ---
 
-## 🚀 Project Evolution: `nouveau-dkms`, Multi-Kernel CI & Cross-Distro Packaging
+## Project Evolution: nouveau-dkms, Multi-Kernel CI & Cross-Distro Packaging
 
 Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`NV160+`) and newer GSP-based GPUs while upstream `nouveau` is in maintenance freeze for pre-Turing silicon, this project serves as **`nouveau-dkms`**—an actively maintained out-of-tree DKMS driver and compute stack covering all **pre-`Nova` NVIDIA architectures**:
 
 | Generation | Chip Families | GeForce Series | Firmware Security | `nouveau-dkms` Target Roadmap |
 | :--- | :--- | :--- | :---: | :--- |
-| **Fermi** (`NVC0`–`NVCF`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | ✅ **Working on GF106 (`v2.2.0`)!** Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips. |
+| **Fermi** (`NVC0`–`NVCF`) | `GF100`–`GF119` | GeForce 400 / 500 / 600M–800M | **Unsigned Falcon** | **Working on GF106 (`v2.2.0+`)**. Expand DDR3/GDDR5 tables, BLCG/SLCG, P3 (`0a`), and zero-flash VBlank to all `GF100`–`GF119` chips. |
 | **Kepler** (`NVE0`–`NV108`) | `GK104`–`GK208` | GeForce 600 / 700 / 800M | **Unsigned Falcon** | Add automatic governor support, GPU Boost 1.0/2.0 interpolation, mobile `GK107M`/`GK208M` RAM fixes, and `MSENC` (`0x1c8000`) VA-API encode. |
 | **Maxwell 1** (`NV117`–`NV118`) | `GM107`–`GM108` | GTX 750 / 750 Ti, GTX 850M–960M, MX110/MX130 | **Unsigned Falcon!** | **High-Value Target**: First-gen Maxwell has **no signed PMU lockdown** and is fully supported in `390.157`! Port custom Falcon PMU + PLL/RAM reclocking to `GM107`/`GM108`. |
 | **Tesla** (`NV50`–`NVA8`) | `G80`–`GT218` | GeForce 8000 / 9000 / 200 / 300 | **Unsigned** | Stabilize `GT215`–`GT218` PDAEMON/host reclocking and integrate `nouveau-dynclockd`. |
@@ -308,10 +257,19 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
   - Automated builder supporting generation profiling (`universal`, `fermi`, `kepler`, `maxwell1`, `tesla`, `all`).
   - Implements `--check-isolation`, standalone monolithic patch synthesis (`--build-patch <gen>`), independent tree construction (`--build-tree <gen>`), and 2D compilation testing against installed kernels.
   - Accommodates Kepler and Maxwell 1 "hybrid" V/F Boost reclocking curves and mobile DDR3 bypass (detailed in `RECLOCKING_NOTES.md` §11).
-- [ ] **Upstream Ingestion & Dual-Branch Tracking Workflow**:
-  - Maintain an `upstream-tracking` branch mirroring upstream Linux `drivers/gpu/drm/nouveau`.
-  - When upstream lands significant modern features (e.g. HDMI 2.1 for Blackwell, HDMI Deep Color, MST audio improvements), rebase the modular patch queue cleanly on top of the newer upstream snapshot.
-  - Automate rebuilding `nouveau-source.tar.gz` and tagging new driver versions when rebasing onto new major kernel releases.
+- [ ] **Upstream Ingestion & Dual-Branch Tracking Workflow (Transition to Owned C Source Tree)**:
+  - Move from the `nouveau-source.tar.gz` + `patches/` + `nouveau.patch` patch-stack model to an owned, git-tracked C source tree under `src/`:
+    1. **Unpack into `src/` with an `upstream` branch**:
+       - Maintain an `upstream` branch containing *only* vanilla `drivers/gpu/drm/nouveau` under `src/` (seeded from `nouveau-source.tar.gz`).
+       - On `master`, bring in `upstream` and replay `0001`–`0015` as individual commits so `git log` and `git blame` preserve each feature cleanly.
+       - Keep `0004` in-tree via `src/nouveau_compat.h` (`LINUX_VERSION_CODE` guards) so multi-kernel DKMS continues to work out of the box.
+    2. **Simplify Build & Packaging**:
+       - Update `Makefile` (`src-prep` / `install`) to build directly from `src/` instead of untarring `nouveau-source.tar.gz` and applying `patches/series`.
+       - Update `PKGBUILD` and `.SRCINFO` to drop `nouveau-source.tar.gz` and `nouveau.patch`.
+       - Remove `nouveau-source.tar.gz`, `nouveau.patch`, and `patches/` (full patch history remains in git).
+    3. **Update CI & Upstream Sync**:
+       - Update `testing/test-kernel-matrix.sh` and `.github/workflows/` to run the multi-kernel compile matrix directly against `src/`.
+       - Add a `tools/sync-upstream.sh <linux-tag>` helper to update the `upstream` branch from `drivers/gpu/drm/nouveau` so future kernel syncs are a single `git merge upstream` (no force-pushing `master`).
 - [x] **GitHub Actions Multi-Kernel DKMS CI Test Pipeline (`.github/workflows/ci-kernel-matrix.yml`)**:
   - Automated CI workflow triggered on push, PR, and weekly schedule that verifies patch application, compiles `nouveau.ko` out-of-tree across 8 active modern distribution targets: Arch `linux-lts` (6.18 LTS), Arch `linux` (7.2+ Mainline), CachyOS `linux-cachyos` (7.3+ / Clang `LLVM=1`), Fedora latest (`kernel-devel`), Ubuntu 26.04 LTS / Rolling (`linux-headers-generic`), Ubuntu 24.04 LTS / Linux Mint 22 HWE (`linux-headers-generic-hwe-24.04`), Debian Testing (`linux-headers-amd64`), and openSUSE Tumbleweed (`kernel-default-devel`), and packages `.deb`, `.rpm`, and `.pkg.tar.zst` artifacts.
 - [x] **Community Triage & Workflow Shift (Discussions vs. Issues)**:

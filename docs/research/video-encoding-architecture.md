@@ -1,6 +1,8 @@
-# 🎬 Video Encoding & Hardware Acceleration Architecture (`NVENC.md`)
+# Video Encoding & Hardware Acceleration Architecture
 
-This document details hardware video encoding and decoding capabilities, platform topology, immediate OpenCL encoding workflows, and the planned **Hybrid Compute-Shader `VA-API` H.264 Encoder (`NVCUVENC` Open-Source Equivalent)** for NVIDIA Fermi (`GF100`–`GF119`) and Kepler/Maxwell GPUs running the **Nouveau** driver.
+> **Notice:** This document is an architectural research paper covering video decode and encode acceleration options across pre-Turing NVIDIA GPUs, including OpenCL lookahead, hybrid compute-shader VA-API encoding concepts, and fixed-function MSENC register structures.
+
+This document details hardware video encoding and decoding capabilities, platform topology, OpenCL encoding workflows, and research into hybrid compute-shader video encoding architectures.
 
 ---
 
@@ -97,8 +99,8 @@ As `nouveau-reclocking-dkms` expands to cover **Kepler (`GK104`–`GK208`)** and
 
 | Encoding / Decoding Method | Target GPUs | Status | Performance & CPU Impact |
 | :--- | :---: | :---: | :--- |
-| **PureVideo HD Hardware Decode (`VP4`/`VP5`)** | Fermi / Kepler / Maxwell | ✅ Supported (needs `nouveau-extract-fw`) | 1080p @ 60 FPS decode (`< 5%` CPU) |
-| **`x264` OpenCL Lookahead (`--opencl`)** | Fermi (`GF10x`/`GF11x`) | 🧪 Ready to validate via `Rusticl` | **2×–4× faster** than pure CPU `x264` |
-| **Hybrid Compute-Shader `VA-API` H.264 (`NVCUVENC`)** | Fermi (`GF100`–`GF119`) | 📋 Planned (`TODO.md` §8) | Zero-copy `DMA-BUF` + GPU ME/DCT (`< 12%` CPU at 1080p30/720p60) |
-| **Fixed-Function `MSENC` (`0x1c8000`) `VA-API`** | Kepler (`GK104+`) & Maxwell (`GM107+`) | 📋 Planned (`TODO.md` §8) | Dedicated ASIC H.264 encode (`< 3%` CPU) |
-| **Intel QuickSync (QSV)** | Dell XPS L702X 120 Hz SKU | ❌ Physically Disabled in BIOS | N/A (Intel iGPU bypassed for 120 Hz eDP) |
+| **PureVideo HD Hardware Decode (`VP4`/`VP5`)** | Fermi / Kepler / Maxwell | [x] Supported (needs `nouveau-extract-fw`) | 1080p @ 60 FPS decode (`< 5%` CPU) |
+| **`x264` OpenCL Lookahead (`--opencl`)** | Fermi (`GF10x`/`GF11x`) | Ready to validate via `Rusticl` | **2×–4× faster** than pure CPU `x264` |
+| **Hybrid Compute-Shader `VA-API` H.264 (`NVCUVENC`)** | Fermi (`GF100`–`GF119`) | Planned (`TODO.md` §8) | Zero-copy `DMA-BUF` + GPU ME/DCT (`< 12%` CPU at 1080p30/720p60) |
+| **Fixed-Function `MSENC` (`0x1c8000`) `VA-API`** | Kepler (`GK104+`) & Maxwell (`GM107+`) | Planned (`TODO.md` §8) | Dedicated ASIC H.264 encode (`< 3%` CPU) |
+| **Intel QuickSync (QSV)** | Dell XPS L702X 120 Hz SKU | [ ] Physically Disabled in BIOS | N/A (Intel iGPU bypassed for 120 Hz eDP) |

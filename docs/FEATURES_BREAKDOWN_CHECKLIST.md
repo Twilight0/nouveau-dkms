@@ -1,4 +1,4 @@
-# 🧭 Features Architectural Breakdown & Project Separation Checklist (`FEATURES_BREAKDOWN_CHECKLIST.md`)
+# Features Architectural Breakdown & Project Separation Checklist (`FEATURES_BREAKDOWN_CHECKLIST.md`)
 
 This document outlines the architectural boundaries of all planned and in-flight features across the project. It classifies which components belong directly inside the **kernel driver (`nouveau.ko`)**, which must be maintained in **upstream user-space projects (e.g. Mesa)**, and which belong in a **companion user-space utilities suite**.
 
@@ -107,32 +107,8 @@ These items require direct MMIO register access, hardware interrupt servicing, p
 
 These components live above the kernel interface. They compile against user-space graphics APIs and cannot be included directly in `nouveau.ko`.
 
-### 1. Mesa Gallium (`nvc0` / Rusticl / VA-API)
-- [ ] **Mesa Rusticl: Raise `CL_DEVICE_MAX_MEM_ALLOC_SIZE`**:
-  - **Location**: `src/gallium/drivers/nouveau/nvc0/` in Mesa.
-  - **Action**: Raise single buffer allocation cap from 25% of VRAM (`768 MiB`) to **90% of VRAM (`~2.75 GiB`)** so `llama.cpp` and `CLBlast` can load weights into contiguous buffers.
-- [ ] **Mesa Gallium VA-API: Hybrid Compute-Shader H.264 Encoder**:
-  - **Location**: `src/gallium/frontends/va/` and `src/gallium/drivers/nouveau/nvc0/`.
-  - **Action**: Implement `pipe_video_codec` with `VAEntrypointEncSlice` running color conversion, parallel SAD/SATD motion estimation, and integer DCT on Fermi SMs (`NVC0_COMPUTE`), outputting to standard OBS Studio (`obs-vaapi`) and FFmpeg.
-- [ ] **Mesa Gallium VA-API: Kepler/Maxwell Fixed-Function `MSENC` (`0x1c8000`)**:
-  - **Location**: `src/gallium/drivers/nouveau/nve4/` and `nv50/`.
-  - **Action**: Expose hardware `NVENC` via VA-API on Kepler (`GK104+`) and Maxwell (`GM107+`).
-
-### 2. Mesa Vulkan (`NVK` / `nvk-fermi`)
-- [ ] **Vulkan 1.0/1.1 Bound-Descriptor Lowering (`nvk-fermi`)**:
-  - **Location**: `src/nouveau/vulkan/` in Mesa.
-  - **Action**: Implement `hasvk`-style bound-descriptor lowering (mapping Vulkan descriptor sets into Fermi's 128 `TIC` / 32 `TSC` binding tables) over Mesa's `NIR → nv50_ir` compiler backend.
-
-### 3. Mesa Gallium & Compiler Backends (`nv50_ir` / `nouveau`)
-- [ ] **Mesa `nv50_ir`: Dual-Issue Warp Scheduling & Superscalar Dispatch [~10% Compute Win]**:
-  - **Location**: `src/nouveau/codegen/nv50_ir_*.cpp` in Mesa.
-  - **Action**: Enhance instruction scheduler to bundle independent ALU + TEX/MEM or INT + FP instructions into dual-issue pairs for Fermi SM20 dual warp schedulers, closing the shader ALU deficit against NVIDIA's proprietary compiler.
-- [ ] **Mesa `nv50_ir`: Register Spilling Mitigation & Constant Rematerialization**:
-  - **Location**: `src/nouveau/codegen/nv50_ir_ra.cpp` in Mesa.
-  - **Action**: Implement graph-coloring rematerialization of uniform expressions, constants, and address math during register allocation to prevent spills into slow local VRAM.
-- [ ] **Mesa Gallium Z-Cull & Tile Compression Integration**:
-  - **Location**: `src/gallium/drivers/nouveau/nv50/nv50_surface.c` and `nvc0/`.
-  - **Action**: Bind kernel `TAGRAM` buffer allocations to depth/stencil surfaces to activate hardware Z-Cull and lossless color tile compression.
+### 1. Mesa Gallium (`nvc0` / Rusticl / VA-API) — *Tracked in [`Twilight0/mesa-aliveos`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md)*
+- Moved userspace Mesa tasks (Rusticl `CL_DEVICE_MAX_MEM_ALLOC_SIZE`, hybrid compute-shader VA-API H.264 encoder, Kepler/Maxwell `MSENC` VA-API encode, `nvk-fermi` bound-descriptor Vulkan, `nv50_ir` dual-issue scheduling and rematerialization, Z-Cull/tile compression integration, SSBO bounds clamping, and Wayland EGL visual fallback) to [`mesa-aliveos/TODO.md`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md).
 
 ### 4. Application Runtimes & Inference Engines
 - [ ] **`llama.cpp` / `CLBlast` OpenCL Acceleration**:
@@ -245,11 +221,5 @@ Always open a draft Merge Request on Mesa GitLab (`gitlab.freedesktop.org/mesa/m
 - [ ] `nv3dvision-ir` USB emitter synchronization daemon (`0955:0007`)
 - [ ] `nouveau-extract-fw` PureVideo HD / MSENC firmware extraction script
 
-### External Project: Mesa Enhancements (Downstream `aliveos-repo` Package / RFC MR)
-- [ ] Mesa `nv50_ir`: Dual-issue warp scheduling & superscalar execution [~10% compute win]
-- [ ] Mesa `nv50_ir`: Register spilling mitigation & constant rematerialization
-- [ ] Mesa Gallium: Z-Cull & lossless tile compression integration (`TAGRAM`) [~15% bandwidth win]
-- [ ] Mesa `Rusticl`: Raise `CL_DEVICE_MAX_MEM_ALLOC_SIZE` to 90% VRAM (`~2.75 GiB`) on `nvc0`
-- [ ] Mesa Gallium VA-API: 4-stage Hybrid Compute-Shader H.264 Encoder for OBS Studio / FFmpeg
-- [ ] Mesa Gallium VA-API: Kepler/Maxwell fixed-function `MSENC` (`0x1c8000`)
-- [ ] Mesa Vulkan: Fermi bound-descriptor lowering (`nvk-fermi`)
+### External Project: Mesa Enhancements — *Moved to [`Twilight0/mesa-aliveos`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md)*
+- All Mesa `nvc0` / `nv50_ir` / `Rusticl` / `VA-API` / `nvk-fermi` tasks are now tracked in [`mesa-aliveos/TODO.md`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md).

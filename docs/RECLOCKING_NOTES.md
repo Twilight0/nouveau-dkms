@@ -47,14 +47,14 @@ This document is the unified hardware, kernel, and reverse-engineering reference
 
 | Component | Status | Description / Solution |
 |---|---|---|
-| **Core / Shader / Voltage Reclocking** | ✅ **Working** | Transitions `03` ↔ `07` ↔ `0f` ↔ `10` cleanly via `nvkm_cstate_prog()` with factory `1.030 V` regulation. |
-| **Bidirectional DDR3 Memory Reclocking (`324` ↔ `900 MHz`)** | ✅ **Working (`v2.0.0+`)** | Custom resident Falcon microcode executor (`memx_exec_custom.fuc`) + hardware PHY latch (`0x001548 = 0x80000101`) + PMU clock domain protection (`0x0c`). See §8.3. |
-| **S3 Suspend/Resume Recovery** | ✅ **Working (`v2.0.1+`)** | Hardware signature check (`SCRATCH0 == 0xE1EC0001`) detects cleared Falcon IMEM on wake and self-heals via cold bootstrap without timeout. See §8.4. |
-| **Dynamic PCIe Gen1 ↔ Gen2 Scaling** | ✅ **Working (`v2.0.1+`)** | Automatically scales between PCIe Gen1 (`2.5 GT/s x16`) in `03`/`07` and Gen2 (`5.0 GT/s x16`, `8.0 GB/s`) in `0f`/`10`. See §8.4. |
-| **Live TTM VRAM Telemetry & Battery Cap** | ✅ **Working (`v2.1.0+`)** | Exact TTM `VRAM:` readout in debugfs + `/run/nouveau/vram` snapshot and `BATTERY_CAP` AC/DC profile awareness. |
-| **Zero-Flash VBlank Memory Reclocking** | 📋 **Root Cause Solved (§10.4)** | Host-side `gf100_ram_wait_vblank()` landed in `v2.1.0`; full zero-flash requires moving `WAIT_VBLANK` inside `memx_exec_custom.fuc` + `ISOHUB` watermark boost (`_nv031916rm`). |
-| **Dynamic Clock Daemon (`nouveau-dynclockd`)** | ✅ **Working** | Automatically scales P-states (`03`/`07` ↔ `0f`) with thermal protection (`80 °C`) and battery cap. |
-| **Backlight & Fan RPM Telemetry** | ✅ **Working** | ACPI EC hotkey driver (`dell-xps-brightness-dkms`) and `dell_smm_hwmon` RPM monitoring in `nouveau-ctrl` / `nouveau-tui`. |
+| **Core / Shader / Voltage Reclocking** | **Working** | Transitions `03` ↔ `07` ↔ `0f` ↔ `10` cleanly via `nvkm_cstate_prog()` with factory `1.030 V` regulation. |
+| **Bidirectional DDR3 Memory Reclocking (`324` ↔ `900 MHz`)** | **Working (`v2.0.0+`)** | Custom resident Falcon microcode executor (`memx_exec_custom.fuc`) + hardware PHY latch (`0x001548 = 0x80000101`) + PMU clock domain protection (`0x0c`). See §8.3. |
+| **S3 Suspend/Resume Recovery** | **Working (`v2.0.1+`)** | Hardware signature check (`SCRATCH0 == 0xE1EC0001`) detects cleared Falcon IMEM on wake and self-heals via cold bootstrap without timeout. See §8.4. |
+| **Dynamic PCIe Gen1 ↔ Gen2 Scaling** | **Working (`v2.0.1+`)** | Automatically scales between PCIe Gen1 (`2.5 GT/s x16`) in `03`/`07` and Gen2 (`5.0 GT/s x16`, `8.0 GB/s`) in `0f`/`10`. See §8.4. |
+| **Live TTM VRAM Telemetry & Battery Cap** | **Working (`v2.1.0+`)** | Exact TTM `VRAM:` readout in debugfs + `/run/nouveau/vram` snapshot and `BATTERY_CAP` AC/DC profile awareness. |
+| **Zero-Flash VBlank Memory Reclocking** | **Root Cause Solved (§10.4)** | Host-side `gf100_ram_wait_vblank()` landed in `v2.1.0`; full zero-flash requires moving `WAIT_VBLANK` inside `memx_exec_custom.fuc` + `ISOHUB` watermark boost (`_nv031916rm`). |
+| **Dynamic Clock Daemon (`nouveau-dynclockd`)** | **Working** | Automatically scales P-states (`03`/`07` ↔ `0f`) with thermal protection (`80 °C`) and battery cap. |
+| **Backlight & Fan RPM Telemetry** | **Working** | ACPI EC hotkey driver (`dell-xps-brightness-dkms`) and `dell_smm_hwmon` RPM monitoring in `nouveau-ctrl` / `nouveau-tui`. |
 
 ---
 
@@ -952,13 +952,13 @@ The NVIDIA `390.157` legacy driver is the final official proprietary release sup
 
 | Phase / Topic | Status | Where Documented / Next Action |
 |---|---|---|
-| **120 Hz 3D Vision eDP, `+5 MHz` Grace & `8 bpc → 6 bpc` Step-Down** | ✅ **Solved** | See **§10.2** (`_nv000659kms`, `_nv002219kms`, `_nv002187kms`) |
-| **Fermi PDAEMON Context-Switch State Machine (`0x10a128` ↔ `0x10a058`)** | ✅ **Solved** | See **§10.3** (`_nv029783rm`, `_nv029647rm`) |
-| **`OBJSEQ` Bytecode VM, Opcode `0x3a` & Zero-Flash `ISOHUB` + `WAIT_VBLANK`** | ✅ **Solved** | See **§10.4** (`_nv031916rm`, `_nv031754rm`, `_nv031860rm`) |
-| **`0x132004` (`MEMPLL_COEFF`) & Synthetic P3 (`0a` @ `650 MHz` = `0x10012702`)** | ✅ **Solved** | See **§10.5–§10.7** (`_nv010738rm`, `_nv014883rm`, `_nv014880rm`) |
-| **PDAEMON Hardware Load Counters (`0x10a600..0x10a610`) & PowerMizer** | ✅ **Identified** | See **§10.3 & §10.8** (`_nv029625rm` / `_nv029628rm`); mask extraction tracked in `TODO.md` §6 |
-| **Fermi BLCG / SLCG Clock-Gating `.rodata` Tables** | 📋 **Pending Extraction** | Tracked in `TODO.md` §6 |
-| **Kepler (`GK104`–`GK208`) & Maxwell 1 (`GM107`–`GM108`) Reclocking** | 📋 **Planned (`Phase 2–3`)** | Tracked in `TODO.md` (Pre-`Nova` Evolution) |
+| **120 Hz 3D Vision eDP, `+5 MHz` Grace & `8 bpc → 6 bpc` Step-Down** | **Solved** | See **§10.2** (`_nv000659kms`, `_nv002219kms`, `_nv002187kms`) |
+| **Fermi PDAEMON Context-Switch State Machine (`0x10a128` ↔ `0x10a058`)** | **Solved** | See **§10.3** (`_nv029783rm`, `_nv029647rm`) |
+| **`OBJSEQ` Bytecode VM, Opcode `0x3a` & Zero-Flash `ISOHUB` + `WAIT_VBLANK`** | **Solved** | See **§10.4** (`_nv031916rm`, `_nv031754rm`, `_nv031860rm`) |
+| **`0x132004` (`MEMPLL_COEFF`) & Synthetic P3 (`0a` @ `650 MHz` = `0x10012702`)** | **Solved** | See **§10.5–§10.7** (`_nv010738rm`, `_nv014883rm`, `_nv014880rm`) |
+| **PDAEMON Hardware Load Counters (`0x10a600..0x10a610`) & PowerMizer** | **Identified** | See **§10.3 & §10.8** (`_nv029625rm` / `_nv029628rm`); mask extraction tracked in `TODO.md` §6 |
+| **Fermi BLCG / SLCG Clock-Gating `.rodata` Tables** | **Pending Extraction** | Tracked in `TODO.md` §6 |
+| **Kepler (`GK104`–`GK208`) & Maxwell 1 (`GM107`–`GM108`) Reclocking** | **Planned (`Phase 2–3`)** | Tracked in `TODO.md` (Pre-`Nova` Evolution) |
 
 ---
 

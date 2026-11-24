@@ -1,6 +1,8 @@
-# 🕶️ NVIDIA 3D Vision on Linux: Hardware, Software & Stereoscopic 3D Guide (`3D_VISION.md`)
+# NVIDIA 3D Vision on Linux: Hardware, Software & Stereoscopic 3D Guide
 
-This document is the comprehensive hardware reference, protocol specification, and practical deployment guide for running **NVIDIA 3D Vision active-shutter glasses and infrared (IR) emitters** on Linux under the **Nouveau** driver, specifically focused on the **Dell XPS 17 L702X 3D Edition** (`GF106M` / 120 Hz eDP display + internal USB IR emitter) and external 3D Vision USB emitters (`0955:0007`).
+> **Notice:** This document is a hardware reference and userspace integration guide for stereoscopic 3D peripherals (active-shutter glasses, USB IR emitter firmware, and 3D media players).
+
+This document is a hardware reference, protocol specification, and deployment guide for running **NVIDIA 3D Vision active-shutter glasses and infrared (IR) emitters** on Linux under the **Nouveau** driver, specifically focused on the **Dell XPS 17 L702X 3D Edition** (`GF106M` / 120 Hz eDP display + internal USB IR emitter) and external 3D Vision USB emitters (`0955:0007`).
 
 ---
 
