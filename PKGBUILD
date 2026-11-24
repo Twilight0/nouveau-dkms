@@ -19,7 +19,7 @@ source=(
   "nouveau-load.conf"
 )
 sha256sums=('1426cea7f5c4959cfcaec78b4974cde3071f51eb9fdf9beedf38efae0bc6b9ad'
-            '6b5c948d3cd1dd53d9d841c10475351ba606cc35ba4283a80cc73db4a3e4d59c'
+            '58b1b27968e1f10ad5712ee82e85f630563ce2e6431d72090f0530efd21d59de'
             '7f0d3d86a1551d4f1775d6dea33568f04d59dbf38faa7e9d50c0b327cfc327a6'
             '326efac21bf858f7be0e41b21f2c585bfd1ef5b18dad9cce022685a4623bb090'
             '661930169e6914c8c1a174f1f45cfb885e38c6aff9ec5cfc7ea1d7a740a84e17')
