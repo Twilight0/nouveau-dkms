@@ -1,0 +1,86 @@
+# Fermi (GF100-GF119): DDR3 executor board gate (GF106M L702X script only on that board) and 0f voltage clamp limited to GF106
+diff -ruN a/nvkm/subdev/clk/base.c b/nvkm/subdev/clk/base.c
+--- a/nvkm/subdev/clk/base.c	2026-11-24 15:10:31.226072031 +0000
++++ b/nvkm/subdev/clk/base.c	2026-11-24 15:10:58.581284554 +0000
+@@ -449,9 +449,12 @@
+ 	cstate->voltage = perfE.voltage;
+ 	/* Class A (universal boards): trust VBIOS voltage first. GF106M
+ 	 * L702X VBIOS undervolts 0f (862.5 mV vs factory 1.030 V VID 0x01),
+-	 * so raise to 0x67 only when VBIOS asks for less. Other boards
+-	 * (e.g. GF119M 410M) keep their own factory VID untouched. */
+-	if (pstate->pstate == 0x0f && perfE.voltage < 0x67)
++	 * so raise to 0x67 only when VBIOS asks for less. The clamp is
++	 * limited to GF106 (NVC3): other boards keep their own factory VID
++	 * (e.g. GF119M 410M, or the GF108 Quadro 600 whose 0f asks for VID
++	 * 0x63, which the ungated clamp would have raised). */
++	if (clk->subdev.device->chipset == 0xc3 &&
++	    pstate->pstate == 0x0f && perfE.voltage < 0x67)
+ 		cstate->voltage = 0x67;
+ 	cstate->domain[nv_clk_src_core] = perfE.core;
+ 	cstate->domain[nv_clk_src_shader] = perfE.shader;
+diff -ruN a/nvkm/subdev/fb/ramgf100.c b/nvkm/subdev/fb/ramgf100.c
+--- a/nvkm/subdev/fb/ramgf100.c	2026-11-24 15:10:31.231350325 +0000
++++ b/nvkm/subdev/fb/ramgf100.c	2026-11-24 15:10:58.582147366 +0000
+@@ -26,6 +26,7 @@
+ #include "ramfuc.h"
+ 
+ #include <core/option.h>
++#include <core/pci.h>
+ #include <subdev/bios.h>
+ #include <subdev/bios/perf.h>
+ #include <subdev/bios/pll.h>
+@@ -106,6 +107,13 @@
+ 	 * Zero = undiscovered, callers fall back to GF106M 324/900. */
+ 	u32 ddr3_lo;
+ 	u32 ddr3_hi;
++	/* Which captured executor script this board may run.  Anything
++	 * else: memory reclock is skipped, never attempted. */
++	enum {
++		GF100_DDR3_NONE = 0,
++		GF100_DDR3_L702X,	/* 10de:0dcd 1028:04b7, GF106M, fexec_code.inc */
++	} ddr3_board;
++	bool ddr3_skip_logged;
+ };
+ 
+ static void
+@@ -572,6 +580,19 @@
+ 	u32 cur = nvkm_clk_read(device->clk, nv_clk_src_mem);
+ 	u32 lo, hi;
+ 
++	/* Board gate: the executor scripts are board-specific captures. */
++	switch (ram->ddr3_board) {
++	case GF100_DDR3_L702X:
++		break;
++	default:
++		if (!ram->ddr3_skip_logged) {
++			nvkm_info(subdev, "DDR3: no executor script for this board (chip %02x), memory stays at %u kHz\n",
++				  device->chipset, cur);
++			ram->ddr3_skip_logged = true;
++		}
++		return 0;	/* core/shader/voltage of the pstate still apply */
++	}
++
+ 	/* Class A: accept any VBIOS memory clock, not just the GF106M pair.
+ 	 * lo/hi are discovered from the board's own pstate table at init
+ 	 * (gf100_ram_init); unknown boards fall back to the GF106M pair
+@@ -1158,6 +1179,20 @@
+ 		return ret;
+ 	}
+ 
++	/* The executor scripts are captures from exact boards. */
++	if (ram->base.type == NVKM_RAM_TYPE_DDR3 && subdev->device->func->pci) {
++		struct nvkm_device *device = subdev->device;
++		struct pci_dev *pdev = device->func->pci(device)->pdev;
++
++		if (device->chipset == 0xc3 && pdev->vendor == 0x10de &&
++		    pdev->device == 0x0dcd && pdev->subsystem_vendor == 0x1028 &&
++		    pdev->subsystem_device == 0x04b7)
++			ram->ddr3_board = GF100_DDR3_L702X;
++		nvkm_info(subdev, "DDR3: memory reclock script: %s\n",
++			  ram->ddr3_board == GF100_DDR3_L702X ? "GF106M L702X" :
++			  "none (memory reclock skipped)");
++	}
++
+ 	ram->fuc.r_0x10fe20 = ramfuc_reg(0x10fe20);
+ 	ram->fuc.r_0x10fe24 = ramfuc_reg(0x10fe24);
+ 	ram->fuc.r_0x137320 = ramfuc_reg(0x137320);

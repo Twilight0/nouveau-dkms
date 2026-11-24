@@ -28,6 +28,7 @@ This directory contains diagnostic artifacts, VBIOS firmware dumps, and MMIO reg
 | **`nouveau_boot.log`** | 11 KiB | Kernel `dmesg` log showing Nouveau driver initialization and probe sequencing. |
 | **`nvidia_reclock.decoded`** | 2.4 KiB | Focused snippet of MEMX bytecode execution and clock PLL register writes. |
 | **`nvidia_reclock.trace`** | 1.9 KiB | Summary trace of memory controller clock transition calls. |
+| **`gf108_quadro600_pmu_memx_decoded.txt`** | 12 KiB | NVIDIA 390.157 PMU memx scripts captured on a GF108 Quadro 600 (`10de:0df8`, subsystem `103c:0835`), decoded with `tools/decode-pmu-memx.py`: block 20 boot 324 -> MPLL 324, blocks 28/61 324 -> 800, blocks 54/69 800 -> 324. Input of `tools/gen-fexec-gf108.py`; see `docs/research/GF108_QUADRO600.md`. |
 | **`sniff_memory_reclock.py`** | 6.3 KiB | Original memory controller register diffing prototype. |
 | **`run_mmiotrace.sh`** | 2.1 KiB | Automated `mmiotrace` logger script. |
 | **`trace_driver_reload.sh`** | 3.0 KiB | Cold driver unload/reload initialization tracer. |
