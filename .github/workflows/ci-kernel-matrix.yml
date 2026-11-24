@@ -68,7 +68,14 @@ jobs:
             cmd: "DEBIAN_FRONTEND=noninteractive apt-get update && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential linux-headers-amd64 kmod bc bison flex python3 libelf-dev libssl-dev patch"
           - label: "openSUSE Tumbleweed (kernel-default-devel / GCC)"
             image: "opensuse/tumbleweed:latest"
-            cmd: "zypper --non-interactive install --no-recommends kernel-default-devel gcc make diffutils patch python3-base tar libelf-devel bc bison flex kmod findutils gawk"
+            cmd: |
+              for attempt in 1 2 3; do
+                zypper --non-interactive --gpg-auto-import-keys refresh -f && \
+                  zypper --non-interactive install --no-recommends kernel-default-devel gcc make diffutils patch python3-base tar libelf-devel bc bison flex kmod findutils gawk && \
+                  break
+                [ "$attempt" -eq 3 ] && exit 1
+                sleep 5
+              done
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4

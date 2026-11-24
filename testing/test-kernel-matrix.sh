@@ -28,6 +28,7 @@ UPSTREAM_FILES=(
     "nouveau_debugfs.c"
     "nouveau_gem.c"
     "nvkm/engine/device/pci.c"
+    "nvkm/engine/fifo/runl.c"
     "nvkm/subdev/clk/base.c"
     "nvkm/subdev/clk/gf100.c"
     "nvkm/subdev/fb/ramfuc.h"
