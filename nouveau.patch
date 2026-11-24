@@ -2638,3 +2638,61 @@ diff -ruN a/nvkm/subdev/fb/ramgf100.c b/nvkm/subdev/fb/ramgf100.c
  	ram->fuc.r_0x10fe20 = ramfuc_reg(0x10fe20);
  	ram->fuc.r_0x10fe24 = ramfuc_reg(0x10fe24);
  	ram->fuc.r_0x137320 = ramfuc_reg(0x137320);
+diff -ruN a/nvkm/subdev/fb/ramgf100.c b/nvkm/subdev/fb/ramgf100.c
+--- a/nvkm/subdev/fb/ramgf100.c	2026-11-24 15:10:58.582147366 +0000
++++ b/nvkm/subdev/fb/ramgf100.c	2026-11-24 15:10:58.704459775 +0000
+@@ -981,18 +981,37 @@
+ 	 * 410M report 405/800 here instead of our GF106M 324/900. */
+ 	if (ram->base.type == NVKM_RAM_TYPE_DDR3) {
+ 		do {
++			u32 mem;
++
+ 			data = nvbios_perfEp(bios, i++, &ver, &hdr, &cnt,
+ 					     &size, &perfE);
+-			if (!data || ver < 0x25 || ver >= 0x40 || size < 2)
++			if (!data || ver < 0x25 || ver > 0x40)
+ 				break;
+-			if (!perfE.memory)
++			mem = perfE.memory;
++			if (ver == 0x40) {
++				/* perf v0x40 keeps clocks in sub-entries; memory
++				 * is domain 0x05 (gf100 clk domain index of
++				 * nv_clk_src_mem).  Skip the unused 0xff entries. */
++				struct nvbios_perfS perfS;
++				u8 sver = ver, shdr = hdr;
++
++				if (perfE.pstate == 0xff)
++					continue;
++				if (!nvbios_perfSp(bios, data, 0x05, &sver, &shdr,
++						   cnt, size, &perfS) || sver != 0x40)
++					continue;
++				mem = perfS.v40.freq;
++			} else if (size < 2) {
++				break;
++			}
++			if (!mem)
+ 				continue;
+ 			for (idx = 0; idx < nmems; idx++) {
+-				if (mems[idx] == perfE.memory)
++				if (mems[idx] == mem)
+ 					break;
+ 			}
+ 			if (idx == nmems && nmems < 8)
+-				mems[nmems++] = perfE.memory;
++				mems[nmems++] = mem;
+ 		} while (data);
+ 		if (nmems >= 2) {
+ 			u32 lo = mems[0], hi = mems[0];
+@@ -1014,9 +1033,9 @@
+ 			if (lo < hi) {
+ 				ram->ddr3_lo = lo;
+ 				ram->ddr3_hi = hi;
+-				nvkm_debug(&ram->base.fb->subdev,
+-					   "DDR3: board memory pair %u/%u kHz from VBIOS (%d states)\n",
+-					   lo, hi, nmems);
++				nvkm_info(&ram->base.fb->subdev,
++					  "DDR3: board memory pair %u/%u kHz from VBIOS (%d states)\n",
++					  lo, hi, nmems);
+ 			}
+ 		}
+ 		if (!ram->ddr3_lo) {
