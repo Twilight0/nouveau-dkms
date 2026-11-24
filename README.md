@@ -151,7 +151,6 @@ options nouveau modeset=1 vblank_continuous=1 NvFermiVblankSync=1 config=NvFermi
 | **[`research/video-encoding-architecture.md`](docs/research/video-encoding-architecture.md)** | Video encoding and decoding reference: hybrid compute-shader VA-API encoding, VP4 firmware, and MSENC analysis. |
 | **[`research/stereoscopic-3d-vision.md`](docs/research/stereoscopic-3d-vision.md)** | Hardware stereoscopic 3D configuration and active-shutter display notes. |
 | **[`CHANGELOG.md`](docs/CHANGELOG.md)** | Release notes and version history. |
-| **[`PATCH_HISTORY.md`](docs/PATCH_HISTORY.md)** | Index of modular driver patches in `patches/`. |
 | **[`CONTRIBUTING.md`](docs/CONTRIBUTING.md)** | Instructions for submitting diagnostic dumps from additional hardware configurations. |
 
 ---

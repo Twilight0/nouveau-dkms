@@ -8,19 +8,54 @@ This document tracks completed milestones, open engineering tasks, and the multi
 - **[`research/vulkan-on-fermi.md`](research/vulkan-on-fermi.md)**: Architectural analysis of Fermi (`NVC0_3D` / `NVC0_COMPUTE`) bound-descriptor Vulkan 1.0/1.1 feasibility (`nvk-fermi`).
 - **[`research/video-encoding-architecture.md`](research/video-encoding-architecture.md)**: Video encoding architecture (`x264` OpenCL, Hybrid Compute-Shader `VA-API` H.264 encoder, Kepler/Maxwell `MSENC`) & PureVideo HD (`VP4`) hardware decode.
 - **[`research/stereoscopic-3d-vision.md`](research/stereoscopic-3d-vision.md)**: Active-shutter stereoscopic 3D hardware reference and USB IR emitter protocol.
-- **[`CHANGELOG.md`](CHANGELOG.md) & [`PATCH_HISTORY.md`](PATCH_HISTORY.md)**: Release changelog and patch rollback catalog.
+- **[`CHANGELOG.md`](CHANGELOG.md)**: Release changelog and version history.
 
 ---
 
 ## Table of Contents
-1. [Completed Milestones](#completed-milestones)
-2. [Kernel & Hardware Subsystems Roadmap](#kernel--hardware-subsystems-roadmap)
-3. [Falcon Microcode & Memory Controller Expansion](#falcon-microcode--memory-controller-expansion)
-4. [Dynamic Governor Modernization](#dynamic-governor-modernization)
-5. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#telemetry-modern-drmdri-apis--wayland-explicit-sync)
-6. [Compute, VRAM Pooling, Video Firmware & Research](#compute-vram-pooling-video-firmware--research)
-7. [Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery](#wayland-egl-stability-full-opengl-4346-feature-parity--robust-mmu-fault-recovery)
-8. [Project Evolution: nouveau-dkms, Multi-Kernel CI & Cross-Distro Packaging](#project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
+1. [Architectural Overview & Project Separation Blueprint](#architectural-overview--project-separation-blueprint)
+2. [Completed Milestones](#completed-milestones)
+3. [Kernel & Hardware Subsystems Roadmap](#kernel--hardware-subsystems-roadmap)
+4. [Falcon Microcode & Memory Controller Expansion](#falcon-microcode--memory-controller-expansion)
+5. [Dynamic Governor Modernization](#dynamic-governor-modernization)
+6. [Telemetry, Modern DRM/DRI APIs & Wayland Explicit Sync](#telemetry-modern-drmdri-apis--wayland-explicit-sync)
+7. [Compute, VRAM Pooling, Video Firmware & Research](#compute-vram-pooling-video-firmware--research)
+8. [Wayland EGL Stability, Full OpenGL 4.3–4.6 Feature Parity & Robust MMU Fault Recovery](#wayland-egl-stability-full-opengl-4346-feature-parity--robust-mmu-fault-recovery)
+9. [Project Evolution: nouveau-dkms, Multi-Kernel CI & Cross-Distro Packaging](#project-evolution-nouveau-dkms-multi-kernel-ci--cross-distro-packaging)
+10. [Companion Suite (`nouveau-utils`) & Upstream Strategy](#companion-suite-nouveau-utils--upstream-strategy)
+
+---
+
+## Architectural Overview & Project Separation Blueprint
+
+This project strictly separates components requiring direct MMIO register access, hardware interrupt servicing, or kernel DRM hooks (**`nouveau-dkms`**) from companion userspace daemons/CLI tools (**`nouveau-utils`**) and graphics/compute compilers (**`mesa-aliveos`** / upstream Mesa & runtimes).
+
+```mermaid
+graph TD
+    subgraph KERNEL["1. Kernel Driver Repository (nouveau-dkms)"]
+        K1["nouveau.ko (Out-of-Tree DKMS Driver)"]
+        K2["Resident Falcon Microcode (memx_exec_custom.fuc)"]
+        K3["Kernel Compatibility Shims (nouveau_compat.h)"]
+        K4["VRAM Block Device /dev/nvram0 (Mode B Engine)"]
+    end
+
+    subgraph TOOLS["2. Standalone Companion Suite (nouveau-utils)"]
+        T1["Dynamic Governor 2.0 (nouveau-dynclockd.py)"]
+        T2["Management CLI & TUI (nouveau-ctrl & nouveau-tui)"]
+        T3["3D Vision USB IR Emitter Daemon (nv3dvision-ir)"]
+        T4["Firmware Extractor (nouveau-extract-fw)"]
+    end
+
+    subgraph MESA["3. User-Space Graphics & Compute (Mesa & Runtimes)"]
+        M1["Mesa Rusticl: Raise CL_DEVICE_MAX_MEM_ALLOC_SIZE"]
+        M2["Mesa Gallium VA-API: Hybrid Compute-Shader H.264 Encoder"]
+        M3["Mesa NVK: Bound-Descriptor Vulkan for Fermi (nvk-fermi)"]
+        M4["llama.cpp / CLBlast: Local SLM / LLM Inference"]
+    end
+
+    KERNEL <--> TOOLS
+    KERNEL <--> MESA
+```
 
 ---
 
@@ -169,6 +204,8 @@ This document tracks completed milestones, open engineering tasks, and the multi
 - [ ] **Video Firmware (`VP4` Decode) & `MSENC` Hardware Enablement ([`research/video-encoding-architecture.md`](research/video-encoding-architecture.md))**:
   1. Ship `nouveau-extract-fw` (in `nouveau-utils`) to extract PureVideo HD `VP4` decode firmware (`nv98_fuc084/085/086`) from `390.157`.
   2. Reverse-engineer Kepler (`GK104+`) & Maxwell (`GM107+`) fixed-function `MSENC` (`0x1c8000`) kernel/firmware initialization for `VA-API` H.264 encoding in `mesa-aliveos`.
+- [ ] **`llama.cpp` / `CLBlast` OpenCL Acceleration**:
+  - Build and tune `llama.cpp` with `-DGGML_OPENCL=ON` for Small Language Models (SLMs) on Fermi.
 
 ---
 
@@ -289,3 +326,21 @@ Because upstream Linux's new Rust driver (`Nova`) exclusively supports Turing (`
   4. **Automated CI Matrix (`.github/workflows/package-and-release.yml`)**: Continuous multi-distro containerized packaging pipeline building and publishing release assets on every tag.
 - [ ] **Universal Distro-Agnostic `Makefile` (`sudo make dkms-install`)**: Fallback source installer for any Linux distribution.
 - [ ] **Gentoo (`sys-kernel/nouveau-dkms` ebuild)** & **NixOS (`flake.nix` kernelModulePackage + NixOS service module)**.
+
+---
+
+## Companion Suite (`nouveau-utils`) & Upstream Strategy
+
+### Companion User-Space Utilities (`Twilight0/nouveau-utils`)
+User-space tools are decoupled into [Twilight0/nouveau-utils](https://github.com/Twilight0/nouveau-utils) with independent releases and cross-distribution packaging (AUR, `.deb`, `.rpm`, `aliveos-repo`):
+- [x] `nouveau-dynclockd.py` 2.0 (hysteresis hold timers, 120 Hz display floor, `/run/nouveau/mode` zero-sudo coordination, `/etc/nouveau-dynclockd.d/*.conf` per-app profiles, `/proc/interrupts` delta tracking, `/run/nouveau/` telemetry snapshots).
+- [x] `nouveau-ctrl`, `nouveau-tui`, and `tools/nouveau-fermi-diag.py`.
+- [ ] Hardware engine counter sampling (`0x10a600..0x10a610`) and 5-tier ladder completion with synthetic P3 state `0a`.
+- [ ] Real-time ASCII sparkline activity history in `nouveau-tui` and `nouveau-ctrl watch`.
+- [ ] `nv3dvision-ir` USB emitter synchronization daemon (`0955:0007`) and `nouveau-extract-fw` PureVideo HD / MSENC firmware extractor.
+
+### Upstream User-Space Strategy (`Twilight0/mesa-aliveos`)
+All Mesa `nvc0` / `nv50_ir` / `Rusticl` / `VA-API` / `nvk-fermi` tasks are tracked in [`mesa-aliveos/TODO.md`](https://github.com/Twilight0/mesa-aliveos/blob/main/TODO.md). When upstream acceptance for legacy hardware patches is uncertain:
+1. **Downstream Custom Package (`aliveos-repo`)**: Maintain targeted `patches/` in `mesa-nouveau-enhanced` / `mesa` `PKGBUILD` so users receive capabilities via standard package updates.
+2. **Overlay Library Prefix (`/opt/nouveau-enhanced/`)**: Test isolated Mesa builds via `LIBVA_DRIVERS_PATH`, `VK_ICD_FILENAMES`, and `/etc/OpenCL/vendors/` without replacing system Mesa.
+3. **Upstream Draft / RFC MRs**: Open draft Merge Requests on `gitlab.freedesktop.org/mesa/mesa` for public visibility, CI validation, and easy cherry-picking.
