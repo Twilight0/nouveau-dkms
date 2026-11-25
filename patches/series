@@ -11,3 +11,4 @@
 0014-drm-nouveau-fermi-perf-v40-memory-discovery.patch
 0015-drm-nouveau-fermi-gf108-quadro600-ddr3-script.patch
 0016-drm-nouveau-fifo-kill-channels-on-rc-failure.patch
+0017-drm-nouveau-disp-detect-edid-override-fallback.patch

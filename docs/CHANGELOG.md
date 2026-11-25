@@ -4,6 +4,24 @@ All notable changes to the **Nouveau Fermi Reclocking** project will be document
 
 ---
 
+## [2.4.2] - 2026-11-25
+
+### Bug Fixes
+- **EDID Override Fallback for Displays Missing EDID EEPROM (`nouveau_connector_detect`, `0017-drm-nouveau-disp-detect-edid-override-fallback.patch`)**:
+  - When DDC/analog detection finds no monitor, check `drm_edid_override_connector_update(connector) > 0` and bind the connector's digital encoder (`DCB_OUTPUT_TMDS` / `DP` / `LVDS`) as `connector_status_connected`.
+  - Allows displays with missing or broken EDID EEPROMs (e.g., `drm.edid_firmware=...` or debugfs `edid_override`) to light up without also needing `video=<conn>:e`, while remaining a complete no-op when no EDID override is configured.
+
+---
+
+## [2.4.2] - 2026-11-25
+
+### Bug Fixes
+- **EDID Override Fallback for Displays Missing EDID EEPROM (`nouveau_connector_detect`, `0017-drm-nouveau-disp-detect-edid-override-fallback.patch`)**:
+  - When DDC/analog detection finds no monitor, check `drm_edid_override_connector_update(connector) > 0` and bind the connector's digital encoder (`DCB_OUTPUT_TMDS` / `DP` / `LVDS`) as `connector_status_connected`.
+  - Allows displays with missing or broken EDID EEPROMs (e.g., `drm.edid_firmware=...` or debugfs `edid_override`) to light up without also needing `video=<conn>:e`, while remaining a complete no-op when no EDID override is configured.
+
+---
+
 ## [2.4.1] - 2026-11-25
 
 ### Bug Fixes & Hardening

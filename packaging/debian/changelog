@@ -1,3 +1,11 @@
+nouveau-dkms (2.4.2-1) unstable; urgency=medium
+
+  * Release v2.4.2: Honor drm.edid_firmware / debugfs edid_override in
+    nouveau_connector_detect() (0017) so displays with missing/broken EDID
+    EEPROMs work without requiring video=<conn>:e.
+
+ -- Twilight0 <twilight0@vivaldi.net>  Wed, 25 Nov 2026 16:07:00 +0200
+
 nouveau-dkms (2.4.1-1) unstable; urgency=medium
 
   * Release v2.4.1: Harden FIFO runlist recovery (0016) to kill remaining

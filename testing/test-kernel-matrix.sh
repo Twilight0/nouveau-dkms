@@ -25,6 +25,7 @@ UPSTREAM_FILES=(
     "include/nvkm/core/device.h"
     "nouveau_backlight.c"
     "nouveau_bo.c"
+    "nouveau_connector.c"
     "nouveau_debugfs.c"
     "nouveau_gem.c"
     "nvkm/engine/device/pci.c"

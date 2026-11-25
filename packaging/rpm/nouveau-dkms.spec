@@ -1,5 +1,5 @@
 Name:           nouveau-dkms
-Version:        2.4.1
+Version:        2.4.2
 Release:        1%{?dist}
 Summary:        Nouveau out-of-tree module with dynamic Fermi reclocking (DKMS)
 License:        GPL-2.0-only
@@ -59,6 +59,9 @@ fi
 %{_prefix}/lib/modules-load.d/nouveau.conf
 
 %changelog
+* Wed Nov 25 2026 Twilight0 <twilight0@vivaldi.net> - 2.4.2-1
+- Release v2.4.2: Honor drm.edid_firmware / debugfs edid_override in nouveau_connector_detect() (0017) for displays with missing/broken EDID.
+
 * Wed Nov 25 2026 Twilight0 <twilight0@vivaldi.net> - 2.4.1-1
 - Release v2.4.1: Harden FIFO runlist recovery (0016) to prevent D-state display/TTM deadlocks on GPU faults.
 
